@@ -25,29 +25,40 @@ Then go to http://localhost:8765.
 | ↑ / ↓ | Change gait: rein back, halt, walk, trot, gallop (↓ at a halt steps backwards) |
 | ← / → | Steer |
 | Space | Jump |
-| E | Get off and lead your horse on foot, or get back on (at a halt) |
-| 1–5 | Change mount |
+| E | Get off and lead your horse on foot, get back on, or take the lead of the horse you're standing by |
+| Q | Let go of the lead and leave the horse where it stands |
+| P | Switch rider: Mélienette or Nanou |
+| 1–5 | Fetch one of the five horses straight away (the one you had goes back to its box) |
 | T | Time of day: dawn, day, golden hour, dusk |
 | Y | Pick the weather: clear, cloudy, rain, fog (switches to manual weather) |
 | U | Auto weather on/off |
-| C | Change course: show-jumping arena, pony arena, cross-country |
+| C | Change course: show-jumping arena, pony arena, cross-country, stable yard |
 | R | Reset the course and score |
 | M | Sound on/off |
 | Drag / scroll | Orbit and zoom the camera |
 
 On phones and tablets, on-screen buttons appear for steering, gait and jumping. Drag the scene to look around.
 
-## Mounts
+## Horses and riders
 
-| # | Mount | Type | Rider |
+There are five horses you can ride. Each one lives in its own box in the stable, with its name on the box:
+
+| # | Name | Breed | Type |
 |---|---|---|---|
-| 1 | Thoroughbred (bay) | Horse | Adult, navy jacket |
-| 2 | Friesian (black, feathered legs) | Horse | Adult, green jacket |
-| 3 | Welsh Pony (dapple grey) | Pony | Teenager, red jacket |
-| 4 | Shetland Pony (piebald) | Pony | Child, blue jacket |
-| 5 | Donkey (grey-dun) | Donkey | Adult, tweed jacket |
+| 1 | Comet | Thoroughbred (bay) | Horse |
+| 2 | Onyx | Friesian (black, feathered legs) | Horse |
+| 3 | Pebble | Welsh Pony (dapple grey) | Pony |
+| 4 | Biscuit | Shetland Pony (piebald) | Pony |
+| 5 | Hazel | Donkey (grey-dun) | Donkey |
 
 Smaller mounts take quicker, shorter strides and jump lower, so the ponies and the donkey suit the smaller fences.
+
+You play as one of two riders. Pick them in the panel at the bottom left, or press P:
+
+- **Mélienette:** green jacket, dark hair in a bun.
+- **Nanou:** a bit smaller, blue jacket, blond hair with bangs.
+
+Your rider stays the same size and in the same clothes whichever horse they ride.
 
 ## Jumping
 
@@ -58,13 +69,27 @@ Smaller mounts take quicker, shorter strides and jump lower, so the ponies and t
 - Too early, too late or no jump at all: you crash or refuse, and the horse stops.
 - Knocked rails go back up a few seconds after you ride away.
 
-## Leading on foot
+## Stable yard
 
-Press E (or the Get off button) at a halt and your rider hops down and walks beside the horse's left shoulder, leading it by the reins in one hand, as you would in real life. The stirrups are run up so they don't swing about.
+West of the arenas is a stable yard. Press C until it says "Stable yard" to start there, facing the barn.
 
-- Steer and change pace as normal, but only up to a trot: the rider jogs alongside.
-- No jumping while you're on foot.
-- Press E again at a halt to get back in the saddle. Resetting the course or changing mount also puts you back on.
+- **The barn** has twelve boxes with straw bedding, name plates and water buckets, a tack room (saddles on wall racks, bridles on hooks, a tack trunk and rugs) and a little office (desk and computer, filing cabinet, notice board). The five horses you can ride live in open boxes with hay; go in on foot to take one out.
+- **The indoor arena** is a 20 × 40 m school with a sand floor, kickboards, dressage letters and two small jumps (I1 and I2).
+- **Roofs fade** while you're inside a building so you can see what you're doing, and the camera stays inside the walls.
+- **Walls are solid:** walking into one just stops you, but hitting one at a trot or faster counts as a crash.
+
+### Hay
+
+There's hay in the open boxes, in loose piles around the yard and in a round bale feeder. Walk your horse up to any of it and the horse stops, puts its head down and starts munching, turning its head towards the hay. The pile slowly goes down while it eats, and gets refilled a while after it's finished. Change gait to ride on. This works on foot too, so you can lead your horse to the hay.
+
+## On foot
+
+- **Get off (E)** at a halt and your rider hops down and leads the horse by the reins from its left shoulder. You can walk or trot alongside, but not jump. The stirrups are run up while nobody's riding.
+- **Let go (Q)** and the horse stays where you left it. It grazes, or eats any hay it can reach.
+- **Walk around on your own** with the arrow keys: walk, run or step back.
+- **Take a lead (E):** walk up to any of the five horses (in its box, or wherever you left it) and press E to take its lead. The first step is always to hold the lead; then press E again to get on.
+- The number keys 1–5 are a shortcut: the horse you pick comes straight to you, and the one you had goes back to its box.
+- Resetting the course (R) puts you back in the saddle.
 
 ## Pony arena
 

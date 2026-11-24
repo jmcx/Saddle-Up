@@ -22,12 +22,17 @@
   #spd { margin-top: 10px; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
   #score { margin-top: 6px; font-size: 12.5px; }
   .hudrow { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-  #courseBtn, #mountBtn {
+  #personSel .lbl { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .6; align-self: center; margin-right: 2px; }
+  #personSel button.on { background: #f1e3c8; color: #2a1d12; border-color: #f1e3c8; }
+  #mountBtn:disabled { opacity: .45; cursor: default; }
+  #letGoBtn[hidden], .gaits span[hidden] { display: none; }
+  #courseBtn, #mountBtn, #letGoBtn, #personSel button {
     display: block; padding: 6px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 12.5px; color: #fff; text-align: left;
     background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18);
   }
-  #courseBtn:hover, #mountBtn:hover { background: rgba(255,255,255,0.18); }
-  #courseBtn:focus-visible, #mountBtn:focus-visible { outline: 2px solid #f1e3c8; outline-offset: 2px; }
+  #courseBtn:hover, #mountBtn:hover:not(:disabled), #letGoBtn:hover, #personSel button:hover { background: rgba(255,255,255,0.18); }
+  #personSel button.on:hover { background: #fff1d6; }
+  #courseBtn:focus-visible, #mountBtn:focus-visible, #letGoBtn:focus-visible, #personSel button:focus-visible { outline: 2px solid #f1e3c8; outline-offset: 2px; }
   #courseBtn b { font-weight: 600; }
   #score .good { color: #a9e08f; } #score .bad { color: #ffab9a; }
   #toast {
@@ -117,7 +122,8 @@
   <div class="gaits"><span data-g="-1">Back</span><span data-g="0">Halt</span><span data-g="1">Walk</span><span data-g="2">Trot</span><span data-g="3">Gallop</span></div>
   <div id="spd">0<small>km/h</small></div>
   <div id="score"></div>
-  <div class="hudrow"><button id="courseBtn" title="Change course (C)">Course: <b>Show-jumping arena</b></button><button id="mountBtn" title="Get off and lead your horse on foot (E)">Get off</button></div>
+  <div class="hudrow"><button id="courseBtn" title="Change course (C)">Course: <b>Show-jumping arena</b></button><button id="mountBtn" title="Get off and lead your horse on foot (E)">Get off</button><button id="letGoBtn" title="Let go and leave your horse here (Q)" hidden>Let go</button></div>
+  <div class="hudrow" id="personSel" role="group" aria-label="Rider"><span class="lbl">Rider</span><button data-p="0">Mélienette</button><button data-p="1">Nanou</button></div>
 </div>
 <div id="toast"></div>
 <div id="env"><button id="timeBtn" title="Time of day (T)">Day</button><button id="wxBtn" title="Weather (Y)">Clear</button><button id="wxAutoBtn" aria-pressed="true">Auto weather</button></div>
@@ -126,10 +132,10 @@
   <div class="pad l"><button data-k="ArrowLeft" aria-label="Steer left">◀</button><button data-k="ArrowRight" aria-label="Steer right">▶</button></div>
   <div class="pad r"><div class="col"><button data-act="up" aria-label="Faster">▲</button><button data-act="down" aria-label="Slower">▼</button></div><button data-act="jump" class="jump">Jump</button></div>
 </div>
-<div id="start"><div><b>Saddle Up</b><em>Click or tap to ride</em><span>↑ ↓ gait · ← → steer · Space jump · E get off · 1–5 mount · C course · T time · Y weather · U auto weather</span></div></div>
+<div id="start"><div><b>Saddle Up</b><em>Click or tap to ride</em><span>↑ ↓ gait · ← → steer · Space jump · E get off · Q let go · 1–5 horse · C course · T time · Y weather · U auto weather</span></div></div>
 <div id="help">
   <kbd>↑</kbd> <kbd>↓</kbd> change gait &nbsp;·&nbsp; <kbd>←</kbd> <kbd>→</kbd> steer<br>
-  <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>E</kbd> get off / on &nbsp;·&nbsp; <kbd>C</kbd> course &nbsp;·&nbsp; <kbd>R</kbd> reset<br>
+  <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>E</kbd> get off / on / take lead &nbsp;·&nbsp; <kbd>Q</kbd> let go<br><kbd>P</kbd> rider &nbsp;·&nbsp; <kbd>C</kbd> course &nbsp;·&nbsp; <kbd>R</kbd> reset<br>
   <kbd>T</kbd> time of day &nbsp;·&nbsp; <kbd>Y</kbd> weather &nbsp;·&nbsp; <kbd>U</kbd> auto weather<br> drag to orbit &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; <kbd>M</kbd> sound on/off
 </div>
 
@@ -219,12 +225,15 @@ const XC_PLAN = [
 const BANK = { x: 58, z: 50, ang: 0.6, hx: 4.5, hz: 3.5, h: 0.7 };
 const POND = { x: 74.6, z: 77.5, r: 8.5, depth: 0.5, level: 0 };
 const MEADOW = { x: -105, z: 55, r: 24 };                    // where the loose horses graze
+// stable yard: barn (with boxes, tack room and office) and an indoor arena. Local coordinates are metres from this point.
+const STABLE = { x: -120, z: -40, y: 0, rect: [-26, 32, -38, 12] };   // rect: minX, maxX, minZ, maxZ of the hard-standing (local)
 // spots levelled out so jumps sit on flat ground: { x, z, r, h0 }
 const FLATS = [
   ...XC_PLAN.map(p => ({ x: p.x, z: p.z, r: p.type === 'bank' ? 9 : 6 })),
   { x: POND.x, z: POND.z, r: 13 },
   { x: MEADOW.x, z: MEADOW.z, r: MEADOW.r },
   { x: PONY_ARENA.cx, z: PONY_ARENA.cz, r: PONY_ARENA.rz + 8 },
+  { x: STABLE.x + 3, z: STABLE.z - 13, r: 42 },
 ];
 BANK.ax = new V3(Math.cos(BANK.ang), 0, -Math.sin(BANK.ang)); BANK.az = new V3(Math.sin(BANK.ang), 0, Math.cos(BANK.ang));
 
@@ -254,6 +263,7 @@ FLATS.forEach((f, i) => {
   f.h0 = h;
 });
 POND.level = FLATS.find(f => f.x === POND.x).h0 - 0.1;
+STABLE.y = FLATS.find(f => f.x === STABLE.x + 3).h0;
 
 // the same height function in GLSL, for the grass blades
 const TERRAIN_GLSL = (() => {
@@ -270,7 +280,13 @@ const TERRAIN_GLSL = (() => {
       h += ${n(BANK.h)} * (1.0 - smoothstep(${n(BANK.hx)}, ${n(BANK.hx + 0.25)}, blx)) * (1.0 - smoothstep(${n(BANK.hz)}, ${n(BANK.hz + 0.25)}, blz));
       return h;
     }
-    float pondFade(vec2 p){ return smoothstep(${n(POND.r - 1.5)}, ${n(POND.r + 0.3)}, length(p - vec2(${n(POND.x)}, ${n(POND.z)}))); }`;
+    float pondFade(vec2 p){ return smoothstep(${n(POND.r - 1.5)}, ${n(POND.r + 0.3)}, length(p - vec2(${n(POND.x)}, ${n(POND.z)}))); }
+    // no grass on the stable yard's hard-standing
+    float yardFade(vec2 p){
+      vec2 c = vec2(${n(STABLE.x + (STABLE.rect[0] + STABLE.rect[1]) / 2)}, ${n(STABLE.z + (STABLE.rect[2] + STABLE.rect[3]) / 2)});
+      vec2 hs = vec2(${n((STABLE.rect[1] - STABLE.rect[0]) / 2)}, ${n((STABLE.rect[3] - STABLE.rect[2]) / 2)});
+      return smoothstep(0.0, 1.2, length(max(abs(p - c) - hs, 0.0)));
+    }`;
   return s;
 })();
 
@@ -363,7 +379,7 @@ const grass = (() => {
       void main(){
         vec2 rel = mod(aOffset - uCenter.xz + uR * 0.5, uR) - uR * 0.5;
         vec2 wp = uCenter.xz + rel;
-        float fade = (1.0 - smoothstep(uR * 0.32, uR * 0.5, length(rel))) * pondFade(wp);
+        float fade = (1.0 - smoothstep(uR * 0.32, uR * 0.5, length(rel))) * pondFade(wp) * yardFade(wp);
         float h = position.y;
         vec3 p = vec3(position.x * aScale.x, h * aScale.y * fade, 0.0);
         float c = cos(aRot), s = sin(aRot);
@@ -400,7 +416,8 @@ const grass = (() => {
 const colliders = [];
 // keep trees and rocks off the arena, the cross-country route and the meadow
 const nearFeature = (x, z, m) => nearCourse(x, z, m) || XC_PLAN.some(p => Math.hypot(x - p.x, z - p.z) < 10 + m)
-  || Math.hypot(x - POND.x, z - POND.z) < POND.r + 6 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < MEADOW.r + 4 + m;
+  || Math.hypot(x - POND.x, z - POND.z) < POND.r + 6 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < MEADOW.r + 4 + m
+  || Math.hypot(x - (STABLE.x + 3), z - (STABLE.z - 13)) < 46 + m;
 (() => {
   const rnd = (a, b) => a + Math.random() * (b - a);
   const trunkGeo = new THREE.CylinderGeometry(0.16, 0.3, 4, 8).translate(0, 2, 0);
@@ -586,6 +603,9 @@ const looseRails = [];
   // four fences down each long side; the turns at the ends are left clear
   const ponyTh = [-0.56, -0.19, 0.19, 0.56, Math.PI - 0.56, Math.PI - 0.19, Math.PI + 0.19, Math.PI + 0.56];
   ponyPlan.forEach(([type, h, spread], i) => addFence({ type, h, spread, course: 'pony', label: 'P' + (i + 1), ...onOval(PONY_ARENA, ponyTh[i]) }, i + 3));
+  // two small jumps down the middle of the indoor arena
+  addFence({ type: 'crossrail', h: 0.5, x: STABLE.x - 8, z: STABLE.z - 24, ang: Math.PI / 2, course: 'stable', label: 'I1' }, 1);
+  addFence({ type: 'vertical', h: 0.6, x: STABLE.x + 8, z: STABLE.z - 24, ang: Math.PI / 2, course: 'stable', label: 'I2' }, 4);
   // cross-country fences
   let xcN = 0;
   XC_PLAN.forEach((p, i) => { if (p.type !== 'bank') addFence({ ...p, xc: true, course: 'xc', label: 'XC' + (++xcN) }, i + 2); else xcN++; });
@@ -641,6 +661,312 @@ const looseRails = [];
     track.receiveShadow = true; scene.add(track);
   }
 })();
+
+// ---------------------------------------------------------------- stable yard: barn with boxes, tack room, office; indoor arena; hay
+const walls = [];            // solid walls the horse can't pass: world-space boxes { minX, maxX, minZ, maxZ }
+const haySpots = [];         // hay a horse can eat: { x, z, y, reach, amount, low, mesh, refillT }
+const roofs = [];            // roofs fade out when you ride inside: { mesh, region }
+const interiors = [];        // world-space floor areas under a roof (camera stays inside these)
+const stallBoxes = [];       // box interiors for the resident horses: { x, z, yaw, hay }
+(() => {
+  const X0 = STABLE.x, Z0 = STABLE.z, Y0 = STABLE.y;
+  const canvasTex = (w, h, draw) => {
+    const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+  };
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const noiseTex = (base, spots, n = 2500, sz = 3) => canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < n; i++) { g.fillStyle = spots[Math.floor(Math.random() * spots.length)]; g.fillRect(Math.random() * w, Math.random() * h, rnd(1, sz), rnd(1, sz)); }
+  });
+  const strawTex = (base, cols) => canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = base; g.fillRect(0, 0, w, h); g.lineCap = 'round';
+    for (let i = 0; i < 1600; i++) {
+      const x = Math.random() * w, y = Math.random() * h, a = Math.random() * TAU, l = rnd(6, 22);
+      g.strokeStyle = cols[Math.floor(Math.random() * cols.length)]; g.lineWidth = rnd(1, 2.2);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+    }
+  });
+  const plankTex = (cols, line) => canvasTex(256, 256, (g, w, h) => {
+    const n = 8;
+    for (let i = 0; i < n; i++) {
+      g.fillStyle = cols[i % cols.length]; g.fillRect(i * w / n, 0, w / n, h);
+      for (let k = 0; k < 40; k++) { g.fillStyle = 'rgba(0,0,0,0.06)'; g.fillRect(i * w / n + Math.random() * w / n, Math.random() * h, 1, rnd(10, 60)); }
+      g.fillStyle = line; g.fillRect(i * w / n, 0, 2, h);
+    }
+  });
+  const M = (o) => new THREE.MeshStandardMaterial({ roughness: 0.85, ...o });
+  const mats = {
+    wood: M({ map: plankTex(['#8a6240', '#82593a', '#916a46', '#7d5536'], '#4a3220') }),
+    woodDark: M({ map: plankTex(['#5a3e28', '#523823', '#60432b'], '#2e1f13') }),
+    kick: M({ map: plankTex(['#9b7650', '#a37e57', '#94704a'], '#5c4229') }),
+    white: M({ color: 0xece8de }),
+    panel: M({ map: canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#d9ddd5'; g.fillRect(0, 0, w, h); g.fillStyle = '#c3c8bf'; for (let i = 0; i < 4; i++) g.fillRect(i * 16, 0, 3, h); }) }),
+    roofBarn: M({ map: canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#6e2c24'; g.fillRect(0, 0, w, h); g.fillStyle = '#5a221c'; for (let i = 0; i < 4; i++) g.fillRect(i * 16, 0, 6, h); }), roughness: 0.6, transparent: true }),
+    roofHall: M({ map: canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#5d6560'; g.fillRect(0, 0, w, h); g.fillStyle = '#4c534f'; for (let i = 0; i < 4; i++) g.fillRect(i * 16, 0, 6, h); }), roughness: 0.55, transparent: true }),
+    concrete: M({ map: noiseTex('#9d9a92', ['#8f8c84', '#aaa79f', '#86837c'], 4000, 2) }),
+    gravel: M({ map: noiseTex('#a89c86', ['#968a74', '#b9ad96', '#8b806b', '#c2b8a3'], 6000, 3) }),
+    sand: M({ map: noiseTex('#b59c74', ['#a68d66', '#c2aa82', '#9c845e'], 6000, 2), roughness: 1 }),
+    straw: M({ map: strawTex('#c9a85e', ['#e0c47a', '#b8954c', '#d8b96a', '#a8873f']), roughness: 1 }),
+    hay: M({ map: strawTex('#a9a259', ['#c2b768', '#8e8a45', '#b9ad5d', '#9c9a4a', '#cbbf75']), roughness: 1 }),
+    bars: new THREE.MeshStandardMaterial({ color: 0x2b2e31, metalness: 0.6, roughness: 0.4 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x9fb8c4, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.35 }),
+    leather: M({ color: 0x5a3620, roughness: 0.55 }),
+    dark: M({ color: 0x23201d }),
+    metalGrey: M({ color: 0x7b8086, metalness: 0.4, roughness: 0.5 }),
+  };
+  // static geometry is merged per material, in yard-local coordinates
+  const buckets = new Map();
+  const push = (mat, g) => { if (!buckets.has(mat)) buckets.set(mat, []); buckets.get(mat).push(g); };
+  const scaleUV = (g, w, h, d, tile) => {
+    const uv = g.attributes.uv, dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * dims[f][0] / tile, uv.getY(i) * dims[f][1] / tile); }
+  };
+  function box(mat, w, h, d, x, y, z, ry = 0, tile = 1.5) {
+    const g = new THREE.BoxGeometry(w, h, d); scaleUV(g, w, h, d, tile);
+    if (ry) g.rotateY(ry);
+    g.translate(x, y, z); push(mat, g); return g;
+  }
+  const toWorldBox = (x0, x1, z0, z1) => ({ minX: X0 + Math.min(x0, x1), maxX: X0 + Math.max(x0, x1), minZ: Z0 + Math.min(z0, z1), maxZ: Z0 + Math.max(z0, z1) });
+  // a straight, axis-aligned wall from (x0,z0) to (x1,z1), standing on yb, with collision
+  function wall(mat, x0, z0, x1, z1, h, t = 0.2, yb = 0, collide = true) {
+    const len = Math.hypot(x1 - x0, z1 - z0), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    if (x0 === x1) box(mat, t, h, len, cx, yb + h / 2, cz); else box(mat, len, h, t, cx, yb + h / 2, cz);
+    if (collide) walls.push(x0 === x1 ? toWorldBox(cx - t / 2 - 0.05, cx + t / 2 + 0.05, z0, z1) : toWorldBox(x0, x1, cz - t / 2 - 0.05, cz + t / 2 + 0.05));
+  }
+  const barPos = [];
+  // a stable partition: solid planks to 1.3 m, bars to 2.3 m, a rail on top
+  function partition(x0, z0, x1, z1, collide = true) {
+    wall(mats.wood, x0, z0, x1, z1, 1.3, 0.08, 0, collide);
+    const len = Math.hypot(x1 - x0, z1 - z0), n = Math.floor(len / 0.13);
+    for (let i = 1; i < n; i++) { const t = i / n; barPos.push([lerp(x0, x1, t), lerp(z0, z1, t)]); }
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    if (x0 === x1) box(mats.woodDark, 0.1, 0.08, len, cx, 2.3, cz); else box(mats.woodDark, len, 0.08, 0.1, cx, 2.3, cz);
+  }
+  const textBoard = (text, w, h, bg = '#243a2c', fg = '#f1ead8') => {
+    const t = canvasTex(512, Math.round(512 * h / w), (g, cw, ch) => {
+      g.fillStyle = bg; g.fillRect(0, 0, cw, ch); g.strokeStyle = fg; g.lineWidth = 6; g.strokeRect(10, 10, cw - 20, ch - 20);
+      g.fillStyle = fg; g.font = `bold ${Math.round(ch * 0.5)}px Georgia, serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, cw / 2, ch / 2 + 2);
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: t, roughness: 0.7 }));
+    m.castShadow = true; return m;
+  };
+  const root = new THREE.Group(); root.position.set(X0, Y0, Z0); scene.add(root);
+  const place = (m, x, y, z, ry = 0) => { m.position.set(x, y, z); m.rotation.y = ry; root.add(m); return m; };
+  const shadowed = (m) => { m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); return m; };
+
+  // ---- hard-standing for the whole yard
+  const [rx0, rx1, rz0, rz1] = STABLE.rect;
+  { const g = new THREE.PlaneGeometry(rx1 - rx0, rz1 - rz0).rotateX(-Math.PI / 2); const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (rx1 - rx0) / 3, uv.getY(i) * (rz1 - rz0) / 3);
+    const m = new THREE.Mesh(g, mats.gravel); m.receiveShadow = true; place(m, (rx0 + rx1) / 2, 0.01, (rz0 + rz1) / 2); }
+
+  // ---- barn: x -14..14, z -6..6. Aisle along x (|z| < 1.6). Boxes either side; tack room and office at the west end.
+  const BX0 = -14, BX1 = 14, BZ = 6, AZ = 1.6, ROOM_X = -9, WALL_H = 3.2;
+  const BOX_W = (BX1 - ROOM_X) / 6;
+  box(mats.concrete, BX1 - BX0, 0.04, BZ * 2, 0, 0.02, 0, 0, 2);
+  // outer walls with the aisle doorways at each end
+  wall(mats.wood, BX0, BZ, BX1, BZ, WALL_H, 0.2);
+  wall(mats.wood, BX0, -BZ, BX1, -BZ, WALL_H, 0.2);
+  for (const x of [BX0, BX1]) { wall(mats.wood, x, -BZ, x, -AZ - 0.2, WALL_H, 0.2); wall(mats.wood, x, AZ + 0.2, x, BZ, WALL_H, 0.2); box(mats.woodDark, 0.25, 0.4, AZ * 2 + 0.8, x, WALL_H - 0.2, 0); }
+  // sliding doors pushed open beside each doorway
+  for (const x of [BX0, BX1]) for (const sz of [-1, 1]) box(mats.woodDark, 0.08, 2.9, 1.9, x + Math.sign(x) * 0.18, 1.45, sz * (AZ + 1.2));
+  // boxes: 6 a side. The five horses you can ride each have an open box with hay (in BREEDS order); one more open box has hay.
+  const RIDEABLE = { n0: 'Comet', n2: 'Onyx', n4: 'Pebble', s1: 'Biscuit', s3: 'Hazel' };
+  const openBoxes = new Set([...Object.keys(RIDEABLE), 's5']);
+  for (const side of [1, -1]) {
+    const tag = side > 0 ? 'n' : 's', zFront = side * AZ, zBack = side * BZ;
+    for (let i = 1; i <= 6; i++) partition(ROOM_X + i * BOX_W, zFront, ROOM_X + i * BOX_W, zBack);
+    for (let i = 0; i < 6; i++) {
+      const xa = ROOM_X + i * BOX_W, xb = xa + BOX_W, cx = (xa + xb) / 2, cz = side * (AZ + BZ) / 2, key = tag + i;
+      box(mats.straw, BOX_W - 0.1, 0.04, BZ - AZ - 0.1, cx, 0.045, cz, 0, 1.2);                         // straw bedding
+      const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.14, 0.32, 14), new THREE.MeshStandardMaterial({ color: [0x2f6fb5, 0x3a8a4a, 0xb53a2f][i % 3], roughness: 0.5 }));
+      place(shadowed(bucket), xb - 0.3, 0.2, zFront + side * 0.3);
+      if (openBoxes.has(key)) {
+        // front with a doorway, sliding door pushed aside
+        partition(xa, zFront, cx - 0.75, zFront); partition(cx + 0.75, zFront, xb, zFront);
+        box(mats.woodDark, 1.45, 2.2, 0.06, cx - 1.2, 1.15, zFront - side * 0.1);
+      } else partition(xa, zFront, xb, zFront);
+      // name plate on each box: on the door, or beside the doorway when it's open
+      if (RIDEABLE[key]) {
+        const plate = textBoard(RIDEABLE[key], 0.6, 0.18, '#f3ecdc', '#3b2a1a');
+        place(plate, cx + 1.3, 1.55, zFront - side * 0.06, side > 0 ? Math.PI : 0);
+      } else if (!openBoxes.has(key)) {
+        const plate = textBoard(['Bramble', 'Juniper', 'Pepper', 'Willow', 'Poppy', 'Clover', 'Maple', 'Sable', 'Rosie', 'Sorrel', 'Tilly', 'Fern'][(side > 0 ? 0 : 6) + i], 0.6, 0.18, '#f3ecdc', '#3b2a1a');
+        place(plate, cx, 1.55, zFront - side * 0.06, side > 0 ? Math.PI : 0);
+      }
+      if (openBoxes.has(key)) {
+        const hay = { x: X0 + cx - 0.4, z: Z0 + zBack - side * 0.7, reach: 1.0, low: true, size: 0.75 };
+        haySpots.push(hay);
+        if (RIDEABLE[key]) stallBoxes.push({ name: RIDEABLE[key], x: X0 + cx + 0.2, z: Z0 + cz - side * 0.5, yaw: Math.atan2(hay.x - (X0 + cx + 0.2), hay.z - (Z0 + cz - side * 0.5)), hay });
+      }
+    }
+  }
+  // tack room (north) and office (south) at the west end
+  for (const side of [1, -1]) {
+    const zFront = side * AZ, zBack = side * BZ;
+    wall(mats.white, ROOM_X, zFront, ROOM_X, zBack, WALL_H, 0.15);
+    // front wall with a door (and the office has a window onto the aisle)
+    wall(mats.white, BX0, zFront, -12.3, zFront, WALL_H, 0.15);
+    wall(mats.white, -11.1, zFront, side > 0 ? ROOM_X : -10.6, zFront, WALL_H, 0.15);
+    box(mats.white, 1.2, WALL_H - 2.15, 0.15, -11.7, 2.15 + (WALL_H - 2.15) / 2, zFront);                    // over the door
+    box(mats.woodDark, 0.08, 2.1, 0.9, -12.3 + 0.08, 1.05, zFront - side * 0.45, 0);                         // door, swung open
+    if (side < 0) {
+      box(mats.white, 1.6, 1.0, 0.15, -9.8, 0.5, zFront); box(mats.white, 1.6, WALL_H - 2.0, 0.15, -9.8, 2.0 + (WALL_H - 2.0) / 2, zFront);
+      box(mats.glass, 1.6, 1.0, 0.03, -9.8, 1.5, zFront); walls.push(toWorldBox(-10.6, ROOM_X, zFront - 0.12, zFront + 0.12));
+    }
+    box(mats.wood, ROOM_X - BX0, 0.03, BZ - AZ, (BX0 + ROOM_X) / 2, 0.05, side * (AZ + BZ) / 2, 0, 1.2);       // wooden floor
+    const sign = textBoard(side > 0 ? 'Tack room' : 'Office', 1.3, 0.32);
+    place(sign, -11.7, 2.55, zFront - side * 0.09, side > 0 ? Math.PI : 0);
+  }
+  // tack room fittings: saddles on wall racks, bridles on hooks, a trunk and a bench
+  {
+    const saddleGeo = new THREE.SphereGeometry(0.26, 18, 10, 0, TAU, 0, Math.PI / 2).scale(0.85, 0.55, 1.35);
+    for (let i = 0; i < 3; i++) {
+      const x = -13.1 + i * 1.3, z = BZ - 0.45;
+      box(mats.woodDark, 0.08, 0.08, 0.5, x, 1.15, z + 0.1);                                                     // rack arm
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.62), mats.white); place(shadowed(pad), x, 1.22, z, Math.PI / 2);
+      const saddle = new THREE.Mesh(saddleGeo, mats.leather); place(shadowed(saddle), x, 1.23, z, Math.PI / 2);
+      for (const sx of [-1, 1]) { const flap = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.36, 0.34), mats.leather); flap.rotation.z = sx * 0.25; place(shadowed(flap), x + sx * 0.0, 1.05, z + sx * 0.2, Math.PI / 2); }
+    }
+    for (let i = 0; i < 3; i++) {
+      const z = 2.5 + i * 1.1;
+      box(mats.metalGrey, 0.12, 0.04, 0.04, BX0 + 0.16, 1.85, z);
+      const loop = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.012, 6, 20), mats.leather); loop.scale.set(1, 1.6, 1); place(shadowed(loop), BX0 + 0.2, 1.6, z, Math.PI / 2);
+      const reins = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.01, 6, 20), mats.leather); reins.scale.set(1, 1.8, 1); place(reins, BX0 + 0.22, 1.42, z + 0.03, Math.PI / 2);
+    }
+    box(mats.woodDark, 1.0, 0.55, 0.55, -9.9, 0.3, 4.9);                                                         // tack trunk
+    box(mats.metalGrey, 1.02, 0.04, 0.57, -9.9, 0.58, 4.9);
+    box(mats.wood, 1.6, 0.06, 0.4, -12.5, 0.45, 2.3); box(mats.woodDark, 0.06, 0.42, 0.36, -13.2, 0.22, 2.3); box(mats.woodDark, 0.06, 0.42, 0.36, -11.8, 0.22, 2.3);   // bench
+    const rugCols = [0x2f4f8a, 0x8a2f3a, 0x2f7a5a];
+    rugCols.forEach((c, i) => { const rug = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.7, 0.9), M({ color: c })); place(shadowed(rug), ROOM_X - 0.15, 1.25 - i * 0.02, 2.4 + i * 1.05); });
+    box(mats.woodDark, 0.05, 0.05, 3.6, ROOM_X - 0.12, 1.62, 3.8);                                              // rug rail
+  }
+  // office: desk with a computer and papers, chair, filing cabinet, notice board, a plant
+  {
+    box(mats.wood, 1.5, 0.05, 0.7, -12.6, 0.76, -5.4); for (const dx of [-0.7, 0.7]) box(mats.woodDark, 0.05, 0.74, 0.65, -12.6 + dx, 0.37, -5.4);
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.34, 0.03), M({ color: 0x111111 })); place(shadowed(screen), -12.6, 1.05, -5.6);
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.3), new THREE.MeshStandardMaterial({ color: 0x8fc3ff, emissive: 0x4f86c8, emissiveIntensity: 0.9 })); place(glow, -12.6, 1.05, -5.58);
+    box(mats.dark, 0.06, 0.12, 0.06, -12.6, 0.84, -5.62);
+    for (let i = 0; i < 3; i++) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.01, 0.3), mats.white); place(p, -13.1 + i * 0.05, 0.79 + i * 0.005, -5.25, 0.2 * i); }
+    const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.09, 12), M({ color: 0xd9542f })); place(mug, -12.0, 0.83, -5.2);
+    box(mats.dark, 0.45, 0.05, 0.45, -12.6, 0.47, -4.6); box(mats.dark, 0.45, 0.5, 0.05, -12.6, 0.75, -4.38); box(mats.metalGrey, 0.05, 0.45, 0.05, -12.6, 0.23, -4.6);   // chair
+    box(mats.metalGrey, 0.5, 1.3, 0.6, -9.5, 0.65, -5.6); for (let i = 0; i < 3; i++) box(mats.dark, 0.2, 0.03, 0.02, -9.5, 0.3 + i * 0.4, -5.29);   // filing cabinet
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), new THREE.MeshStandardMaterial({ roughness: 0.9, map: canvasTex(256, 160, (g, w, h) => {
+      g.fillStyle = '#b8895a'; g.fillRect(0, 0, w, h);
+      const cols = ['#f6f1e4', '#ffe58a', '#a8d8ff', '#ffc2c2', '#c9f0b4'];
+      for (let i = 0; i < 9; i++) { g.save(); g.translate(20 + (i % 3) * 78 + Math.random() * 10, 15 + Math.floor(i / 3) * 48 + Math.random() * 6); g.rotate((Math.random() - 0.5) * 0.2); g.fillStyle = cols[i % cols.length]; g.fillRect(0, 0, 55, 38); g.fillStyle = 'rgba(0,0,0,0.35)'; for (let l = 0; l < 4; l++) g.fillRect(5, 7 + l * 7, 30 + Math.random() * 15, 2); g.fillStyle = '#c0392b'; g.beginPath(); g.arc(27, 3, 3, 0, TAU); g.fill(); g.restore(); }
+    }) }));
+    place(board, BX0 + 0.12, 1.6, -3.6, Math.PI / 2);
+    const rosette = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), M({ color: 0x2a62c9 })); place(rosette, BX0 + 0.13, 1.95, -2.6, Math.PI / 2);
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.12, 0.3, 12), M({ color: 0xa65a3a })); place(shadowed(pot), -9.5, 0.15, -2.1);
+    const plant = new THREE.Mesh(new THREE.IcosahedronGeometry(0.28, 1), M({ color: 0x3f7a35 })); place(shadowed(plant), -9.5, 0.5, -2.1);
+  }
+  // roof: two pitched halves along the barn, and gable ends
+  {
+    const ridge = 5.6, eave = WALL_H, run = BZ + 0.6, ang = Math.atan2(ridge - eave, run), len = Math.hypot(ridge - eave, run);
+    const g = mergeGeometries([-1, 1].map(sz => { const b = new THREE.BoxGeometry(BX1 - BX0 + 1.0, 0.12, len); scaleUV(b, BX1 - BX0 + 1, 0.12, len, 1); b.rotateX(sz * ang); b.translate(0, (ridge + eave) / 2, sz * run / 2); return b; }));
+    const roof = new THREE.Mesh(g, mats.roofBarn); roof.castShadow = true; roof.receiveShadow = true; place(roof, 0, 0, 0);
+    roofs.push({ mesh: roof, region: toWorldBox(BX0, BX1, -BZ, BZ) });
+    const gable = new THREE.BufferGeometry(); gable.setAttribute('position', new THREE.Float32BufferAttribute([0, eave, -BZ, 0, eave, BZ, 0, ridge, 0], 3)); gable.computeVertexNormals();
+    for (const x of [BX0, BX1]) { const m = new THREE.Mesh(gable, new THREE.MeshStandardMaterial({ map: mats.wood.map, roughness: 0.85, side: THREE.DoubleSide })); m.castShadow = true; place(m, x, 0, 0); }
+    const sign = textBoard('Stables', 2.2, 0.55); place(sign, BX1 + 0.12, 3.75, 0, Math.PI / 2);
+    interiors.push({ ...toWorldBox(BX0 + 0.2, BX1 - 0.2, -BZ + 0.2, BZ - 0.2), overWalls: 3.6 });   // look over the box walls
+  }
+
+  // ---- indoor arena: x -20..20, z -34..-14, door in the north wall facing the barn
+  const AX0 = -20, AX1 = 20, AZ0 = -34, AZ1 = -14, AH = 4.5, DOOR = 3.2;
+  { const g = new THREE.PlaneGeometry(AX1 - AX0, AZ1 - AZ0).rotateX(-Math.PI / 2); const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 10, uv.getY(i) * 5);
+    const m = new THREE.Mesh(g, mats.sand); m.receiveShadow = true; place(m, 0, 0.03, (AZ0 + AZ1) / 2); }
+  const hallWall = (x0, z0, x1, z1) => { wall(mats.kick, x0, z0, x1, z1, 1.4, 0.25); wall(mats.panel, x0, z0, x1, z1, AH - 1.4, 0.12, 1.4, false); };
+  hallWall(AX0, AZ0, AX1, AZ0); hallWall(AX0, AZ0, AX0, AZ1); hallWall(AX1, AZ0, AX1, AZ1);
+  hallWall(AX0, AZ1, -DOOR, AZ1); hallWall(DOOR, AZ1, AX1, AZ1);
+  box(mats.panel, DOOR * 2, AH - 3.2, 0.12, 0, 3.2 + (AH - 3.2) / 2, AZ1);
+  box(mats.woodDark, 2.6, 3.1, 0.08, -DOOR - 1.4, 1.55, AZ1 + 0.18);                                           // sliding door, open
+  for (let x = AX0; x <= AX1; x += 5) for (const z of [AZ0, AZ1]) box(mats.woodDark, 0.3, AH, 0.3, x, AH / 2, z);   // posts
+  for (let z = AZ0 + 5; z < AZ1; z += 5) for (const x of [AX0, AX1]) box(mats.woodDark, 0.3, AH, 0.3, x, AH / 2, z);
+  {
+    const ridge = 7.8, run = (AZ1 - AZ0) / 2 + 0.6, ang = Math.atan2(ridge - AH, run), len = Math.hypot(ridge - AH, run), cz = (AZ0 + AZ1) / 2;
+    const g = mergeGeometries([-1, 1].map(sz => { const b = new THREE.BoxGeometry(AX1 - AX0 + 1.0, 0.12, len); scaleUV(b, AX1 - AX0 + 1, 0.12, len, 1); b.rotateX(sz * ang); b.translate(0, (ridge + AH) / 2, cz + sz * run / 2); return b; }));
+    const roof = new THREE.Mesh(g, mats.roofHall); roof.castShadow = true; roof.receiveShadow = true; place(roof, 0, 0, 0);
+    roofs.push({ mesh: roof, region: toWorldBox(AX0, AX1, AZ0, AZ1) });
+    for (let x = AX0 + 5; x < AX1; x += 5) box(mats.woodDark, 0.2, 0.3, AZ1 - AZ0, x, AH, cz);                // roof beams
+    const gable = new THREE.BufferGeometry(); gable.setAttribute('position', new THREE.Float32BufferAttribute([0, AH, AZ0, 0, AH, AZ1, 0, ridge, cz], 3)); gable.computeVertexNormals();
+    for (const x of [AX0, AX1]) { const m = new THREE.Mesh(gable, new THREE.MeshStandardMaterial({ map: mats.panel.map, roughness: 0.85, side: THREE.DoubleSide })); m.castShadow = true; place(m, x, 0, 0); }
+    const sign = textBoard('Indoor arena', 2.8, 0.55); place(sign, 0, 3.75, AZ1 + 0.1);
+    interiors.push(toWorldBox(AX0 + 0.3, AX1 - 0.3, AZ0 + 0.3, AZ1 - 0.3));
+  }
+  // dressage letters around the kickboards
+  for (const [ch, x, z, ry] of [['A', AX0 + 0.14, -24, Math.PI / 2], ['C', AX1 - 0.14, -24, -Math.PI / 2], ['K', -14, AZ0 + 0.14, 0], ['E', 0, AZ0 + 0.14, 0], ['H', 14, AZ0 + 0.14, 0],
+    ['F', -14, AZ1 - 0.14, Math.PI], ['B', 6, AZ1 - 0.14, Math.PI], ['M', 14, AZ1 - 0.14, Math.PI]]) {
+    const b = textBoard(ch, 0.5, 0.5, '#f4f1e8', '#1c1c1c'); place(b, x, 1.0, z, ry);
+  }
+
+  // ---- hay: loose piles in the yard, a round bale in a feeder, and a stack of small bales
+  const hayPile = (x, z, size) => {
+    const parts = [];
+    const mound = new THREE.SphereGeometry(0.6, 14, 8, 0, TAU, 0, Math.PI / 2).scale(1, 0.55, 0.85); parts.push(mound);
+    for (let i = 0; i < 40; i++) {
+      const c = new THREE.BoxGeometry(0.012, 0.012, rnd(0.25, 0.45));
+      c.rotateY(Math.random() * TAU); c.rotateX((Math.random() - 0.5) * 0.6);
+      const a = Math.random() * TAU, r = Math.random() * 0.55;
+      c.translate(Math.cos(a) * r, 0.05 + Math.random() * 0.25 * (1 - r), Math.sin(a) * r * 0.85); parts.push(c);
+    }
+    const m = new THREE.Mesh(mergeGeometries(parts), mats.hay);
+    m.castShadow = true; m.receiveShadow = true; m.scale.setScalar(size);
+    m.position.set(x - X0, 0.02, z - Z0); root.add(m);
+    return m;
+  };
+  for (const h of haySpots) { h.mesh = hayPile(h.x, h.z, h.size); h.y = Y0; h.amount = 1; }
+  for (const [x, z] of [[6, -9], [-8, -10.5], [24, 6]]) haySpots.push({ x: X0 + x, z: Z0 + z, y: Y0, reach: 1.0, low: true, size: 1, amount: 1, mesh: hayPile(X0 + x, Z0 + z, 1) });
+  {
+    // round bale in a metal ring feeder: horses eat from the side, head higher
+    const bx = 22, bz = -8;
+    const bale = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 1.2, 24), [mats.hay, mats.hay, mats.hay]); bale.rotation.x = 0; place(shadowed(bale), bx, 0.6, bz);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.04, 8, 32), mats.metalGrey); ring.rotation.x = Math.PI / 2; place(ring, bx, 0.9, bz);
+    const ring2 = ring.clone(); ring2.position.y = 0.35; root.add(ring2);
+    for (let i = 0; i < 10; i++) { const a = i / 10 * TAU; box(mats.metalGrey, 0.04, 0.6, 0.04, bx + Math.cos(a), 0.62, bz + Math.sin(a)); }
+    haySpots.push({ x: X0 + bx, z: Z0 + bz, y: Y0, reach: 1.15, low: false, size: 1, amount: 1, mesh: bale, bale: true });
+    colliders.push({ type: 'bale', x: X0 + bx, z: Z0 + bz, y: Y0, r: 0.95, h: Infinity });
+  }
+  for (let i = 0; i < 12; i++) {
+    // stacked small bales against the barn's west end
+    const row = i % 4, level = Math.floor(i / 4);
+    box(mats.hay, 0.9, 0.42, 0.5, -16.2, 0.21 + level * 0.42, -4.5 + row * 0.52 + (level % 2) * 0.1, 0, 0.8);
+  }
+  walls.push(toWorldBox(-16.7, -15.7, -4.8, -2.3));
+  // water trough
+  box(mats.metalGrey, 2.0, 0.5, 0.6, 18, 0.25, 7.5); box(new THREE.MeshStandardMaterial({ color: 0x3e6a76, roughness: 0.1, metalness: 0.3 }), 1.9, 0.02, 0.5, 18, 0.46, 7.5);
+  walls.push(toWorldBox(16.9, 19.1, 7.1, 7.9));
+
+  // merge static pieces and add the stable bars
+  for (const [mat, geos] of buckets) { const m = new THREE.Mesh(mergeGeometries(geos), mat); m.castShadow = true; m.receiveShadow = true; root.add(m); }
+  const bars = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.012, 0.012, 1.0, 5), mats.bars, barPos.length);
+  const m4 = new THREE.Matrix4();
+  barPos.forEach(([x, z], i) => { m4.makeTranslation(x, 1.8, z); bars.setMatrixAt(i, m4); });
+  bars.castShadow = true; root.add(bars);
+})();
+
+// soft, rhythmic crunching
+function munch(vol, pan = 0) {
+  if (!audioOk() || vol < 0.02) return;
+  const t = actx.currentTime + 0.01;
+  for (let i = 0; i < 2; i++) noiseHit(t + i * 0.09, { type: 'bandpass', freq: 2400 + Math.random() * 1200, q: 1.5, peak: 0.12 * vol, attack: 0.004, decay: 0.05, pan });
+  noiseHit(t, { type: 'lowpass', freq: 300, peak: 0.1 * vol, attack: 0.01, decay: 0.08, pan });
+}
+// a horse eating: munching sounds and the pile slowly going down (it is refilled a while after it's finished)
+function eatHay(s, hay, dt, vol, pan) {
+  hay.amount = Math.max(0, hay.amount - dt / 120);
+  s.munchT = (s.munchT ?? 0) - dt;
+  if (s.munchT < 0 && s.graze > 0.6) { s.munchT = 0.55 + Math.random() * 0.15; munch(vol, pan); }
+}
+function updateHay(dt) {
+  for (const h of haySpots) {
+    if (h.amount <= 0.02) { h.refillT = (h.refillT ?? 45) - dt; if (h.refillT < 0) { h.amount = 1; h.refillT = 45; } }
+    const a = h.amount <= 0.02 ? 0 : 0.35 + 0.65 * h.amount;
+    if (h.bale) h.mesh.scale.set(0.6 + 0.4 * a, a, 0.6 + 0.4 * a); else h.mesh.scale.set(h.size * (0.7 + 0.3 * a), h.size * a, h.size * (0.7 + 0.3 * a));
+    h.mesh.visible = a > 0;
+  }
+}
 
 function recomputeFence(f) {
   if (f.solid) return;
@@ -914,11 +1240,24 @@ function buildHorse(B, opts = {}) {
     { p: [0, -0.01, 0.10], w: 0.105, ht: 0.085, hb: 0.15 },
     { p: [0, 0.01, 0.24], w: 0.085, ht: 0.075, hb: 0.09 },
     { p: [0, 0.0, 0.38], w: 0.07, ht: 0.065, hb: 0.07 },
-    { p: [0, -0.01, 0.50], w: 0.07, ht: 0.06, hb: 0.07, c: B.muzzle },
-    { p: [0, -0.02, 0.58], w: 0.062, ht: 0.05, hb: 0.06, c: B.muzzle },
-    { p: [0, -0.025, 0.62], w: 0.02, h: 0.02, c: B.muzzle },
+    { p: [0, -0.01, 0.50], w: 0.07, ht: 0.06, hb: 0.045, c: B.muzzle },
+    { p: [0, -0.015, 0.58], w: 0.062, ht: 0.05, hb: 0.035, c: B.muzzle },
+    { p: [0, -0.02, 0.62], w: 0.02, h: 0.02, c: B.muzzle },
   ].map(s => ({ ...s, p: [s.p[0], s.p[1], s.p[2] * HL] })), { radial: 32, color: B.coat, colorFn: cf('head', headOrigin, headExtra) });
   head.add(mk(headGeo));
+  // lower jaw, hinged near the cheek, so the horse can chew; a dark mouth shows when it opens
+  const jaw = new THREE.Group();
+  jaw.position.set(0, -0.035, 0.3 * HL);
+  head.add(jaw);
+  jaw.add(mk(loft([
+    { p: [0, 0, -0.02], w: 0.05, ht: 0.02, hb: 0.04 },
+    { p: [0, -0.005, 0.1 * HL], w: 0.062, ht: 0.018, hb: 0.05 },
+    { p: [0, -0.01, 0.22 * HL], w: 0.058, ht: 0.016, hb: 0.042, c: B.muzzle },
+    { p: [0, -0.012, 0.3 * HL], w: 0.05, ht: 0.015, hb: 0.032, c: B.muzzle },
+    { p: [0, -0.012, 0.335 * HL], w: 0.02, h: 0.015, c: B.muzzle },
+  ], { radial: 20, steps: 6, color: B.coat })));
+  const mouth = mk(new THREE.BoxGeometry(0.085, 0.03, 0.26 * HL), new THREE.MeshStandardMaterial({ color: 0x3a1c1c, roughness: 0.6 }));
+  mouth.position.set(0, -0.04, 0.46 * HL); head.add(mouth); mats.push(mouth.material);
   for (const sx of [1, -1]) {
     const eye = mk(new THREE.SphereGeometry(0.022, 16, 12), eyeMat);
     eye.scale.set(0.8, 1, 1.15); eye.position.set(sx * 0.085, eyeY, eyeZ); head.add(eye);
@@ -1127,8 +1466,8 @@ function buildHorse(B, opts = {}) {
   }
   const legs = [buildLeg(true, true, B.socks[0]), buildLeg(true, false, B.socks[1]), buildLeg(false, true, B.socks[2]), buildLeg(false, false, B.socks[3])]; // LF RF LH RH
 
-  const R = { B, root: horse, body, neck, head, ears, tailSegs, legs, mats, lift: 1.30 * (k - 1), extras: [] };
-  if (opts.rider !== false) buildTackAndRider(R, bodyGeo, headGeo, mats);
+  const R = { B, root: horse, body, neck, head, jaw, ears, tailSegs, legs, mats, lift: 1.30 * (k - 1), extras: [] };
+  if (opts.tack !== false) buildTack(R, bodyGeo, headGeo, mats);
   return R;
 }
 
@@ -1140,20 +1479,8 @@ const A_F = 0.405, B_F = 0.305, A_H = 0.42, B_H = 0.36;
 const PAST_L = 0.14, PAST_ANG = -0.6, HOOF_H = 0.0825;
 const PAST_V = PAST_L * Math.cos(PAST_ANG), PAST_Z = PAST_L * Math.sin(-PAST_ANG);
 
-let H = null;
+let H = null;      // the horse you're riding or leading (or last held)
 let breedIdx = 0;
-function setBreed(i) {
-  breedIdx = (i + BREEDS.length) % BREEDS.length;
-  if (H) {
-    scene.remove(H.root);
-    H.extras.forEach(o => scene.remove(o));
-    H.root.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-    H.mats.forEach(m => m.dispose());
-  }
-  H = buildHorse(BREEDS[breedIdx]);
-  scene.add(H.root);
-  if (typeof onBreedChanged === 'function') onBreedChanged();
-}
 
 // ---------------------------------------------------------------- rider and tack
 // A thin shell that hugs part of a lofted surface (saddle pad, saddle, girth, bridle straps).
@@ -1183,13 +1510,11 @@ function shellPatch(geo, z0, z1, a0, a1, off, { rows = 14, cols = 16, color = 0x
   return m;
 }
 
-const RIDER_LOOK = {
-  Thoroughbred: { size: 1.0, jacket: 0x1e2b4a },
-  Friesian: { size: 1.0, jacket: 0x23402f },
-  'Welsh Pony': { size: 0.82, jacket: 0x9c2730 },
-  'Shetland Pony': { size: 0.64, jacket: 0x3b77c4 },
-  Donkey: { size: 0.84, jacket: 0x6d5b3f },
-};
+// the two riders you can play as; their size and clothes don't depend on the horse
+const PERSONS = [
+  { name: 'Mélienette', size: 1.0, jacket: 0x2a4a3a, hair: 0x4b3424, skin: 0xe2b396, bun: true, bangs: false },
+  { name: 'Nanou', size: 0.82, jacket: 0x3d7cc9, hair: 0xd8b06a, skin: 0xefc3a6, bun: false, bangs: true },
+];
 const _Y = new V3(0, 1, 0), _d = new V3(), _a = new V3(), _b = new V3(), _c = new V3();
 function placeSeg(mesh, a, b) { mesh.position.addVectors(a, b).multiplyScalar(0.5); _d.subVectors(b, a).normalize(); mesh.quaternion.setFromUnitVectors(_Y, _d); }
 // two-bone IK in 3D: joint position for bones l1, l2 from root a to target t, bending towards pole
@@ -1202,9 +1527,9 @@ function ik2(a, t, l1, l2, pole, out) {
   return out.copy(a).addScaledVector(dir, x).addScaledVector(_c, h);
 }
 
-function buildTackAndRider(R, bodyGeo, headGeo, mats) {
+// saddle, pad, girth, bridle, reins and stirrups; also works out where a rider sits on this horse
+function buildTack(R, bodyGeo, headGeo, mats) {
   const { B, body, head } = R;
-  const look = RIDER_LOOK[B.name] ?? RIDER_LOOK.Thoroughbred;
   const leather = 0x5a3620, dark = 0x2a1a10;
   const add = (parent, m) => { parent.add(m); mats.push(m.material); return m; };
   // back profile at the saddle
@@ -1212,7 +1537,6 @@ function buildTackAndRider(R, bodyGeo, headGeo, mats) {
   const at = (z) => { let bt = 0, bd = 1e9; for (let i = 0; i <= 200; i++) { P.getPoint(i / 200, p); if (Math.abs(p.z - z) < bd) { bd = Math.abs(p.z - z); bt = i / 200; } } P.getPoint(bt, p); D.getPoint(bt, d); return { y: p.y, top: p.y + d.y, w: d.x, ht: d.y, hb: d.z }; };
   const seat = at(0.08);
 
-  // saddle pad, saddle (cantle and pommel rise at either end), flaps and girth
   add(body, shellPatch(bodyGeo, -0.24, 0.32, 0.24 * Math.PI, 0.76 * Math.PI, 0.007, { color: 0xf1eee6 }));
   add(body, shellPatch(bodyGeo, -0.22, 0.3, 0.3 * Math.PI, 0.7 * Math.PI,
     (zn, an) => 0.02 + 0.075 * Math.exp(-(((zn - 0.04) / 0.1) ** 2)) + 0.05 * Math.exp(-(((zn - 0.95) / 0.09) ** 2)) + 0.015 * Math.sin(an * Math.PI),
@@ -1222,7 +1546,6 @@ function buildTackAndRider(R, bodyGeo, headGeo, mats) {
   add(body, shellPatch(bodyGeo, 0.2, 0.26, -Math.PI * 0.95, Math.PI * 0.12, 0.012, { color: dark, rows: 2, cols: 24 }));
   add(body, shellPatch(bodyGeo, 0.2, 0.26, Math.PI * 0.88, Math.PI * 1.05, 0.012, { color: dark, rows: 2, cols: 6 }));
 
-  // bridle: crownpiece behind the ears, noseband, cheek pieces, bit rings
   const HL = B.headL;
   add(head, shellPatch(headGeo, 0.02 * HL, 0.05 * HL, -Math.PI, Math.PI, 0.006, { color: dark, rows: 2, cols: 28 }));
   add(head, shellPatch(headGeo, 0.39 * HL, 0.43 * HL, -Math.PI, Math.PI, 0.006, { color: dark, rows: 2, cols: 28 }));
@@ -1232,61 +1555,87 @@ function buildTackAndRider(R, bodyGeo, headGeo, mats) {
     const ring = add(head, new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.004, 6, 16), new THREE.MeshStandardMaterial({ color: 0xc9c9c9, metalness: 0.9, roughness: 0.3 })));
     ring.position.set(sx * 0.068, -0.035, 0.53 * HL); ring.rotation.y = Math.PI / 2; bits.push(ring);
   }
-
-  // the rider
-  const rs = look.size / B.S;                             // rider scale inside the horse's scaled body
-  const rider = new THREE.Group();
-  rider.position.set(0, seat.top + 0.045, 0.08); rider.scale.setScalar(rs);
-  body.add(rider);
-  const M = (color, o = {}) => { const m = new THREE.MeshPhysicalMaterial({ color, roughness: 0.65, sheen: 0.3, sheenRoughness: 0.5, ...o }); mats.push(m); return m; };
-  const jacket = M(look.jacket), breeches = M(0xf1efe9, { roughness: 0.8 }), boots = M(0x111111, { roughness: 0.3, clearcoat: 0.6 }),
-    skin = M(0xe2b396, { roughness: 0.6 }), glove = M(0x161616), helmetM = M(0x15171c, { roughness: 0.45, sheen: 0.8 }), hair = M(0x4b3424),
-    leatherM = M(leather), metal = new THREE.MeshStandardMaterial({ color: 0xcfcfcf, metalness: 0.9, roughness: 0.3 });
-  mats.push(metal);
-  const part = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; rider.add(m); return m; };
-  const cap = (r, len, mat) => part(new THREE.CapsuleGeometry(r, len, 4, 12), mat);
-  const L_TH = 0.43, L_SH = 0.43, L_UA = 0.28, L_FA = 0.26;
-  const pelvis = part(new THREE.SphereGeometry(0.15, 18, 12), breeches); pelvis.scale.set(1.15, 0.72, 0.95);
-  const torso = cap(0.14, 0.24, jacket); torso.scale.set(1.18, 1, 0.78);
-  const neckM = cap(0.045, 0.05, skin);
-  const headG = new THREE.Group(); rider.add(headG);
-  const face = new THREE.Mesh(new THREE.SphereGeometry(0.092, 18, 14), skin); face.scale.set(0.92, 1.05, 1); face.castShadow = true; headG.add(face);
-  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.106, 20, 12, 0, TAU, 0, Math.PI * 0.55), helmetM); helmet.position.y = 0.022; helmet.rotation.x = -0.18; helmet.castShadow = true; headG.add(helmet);
-  const peak = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.012, 16, 1, false, -Math.PI / 2, Math.PI), helmetM); peak.position.set(0, 0.01, 0.075); peak.rotation.x = 0.25; headG.add(peak);
-  const bun = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), hair); bun.position.set(0, -0.04, -0.1); headG.add(bun);
-  const limbs = {};
+  // stirrups (only shown while someone rides; run up otherwise)
+  const leatherM = new THREE.MeshStandardMaterial({ color: leather, roughness: 0.6 }), metal = new THREE.MeshStandardMaterial({ color: 0xcfcfcf, metalness: 0.9, roughness: 0.3 });
+  mats.push(leatherM, metal);
+  const stirrups = {};
   for (const sx of [1, -1]) {
-    limbs[sx] = {
-      ua: cap(0.046, L_UA - 0.09, jacket), fa: cap(0.04, L_FA - 0.08, jacket), hand: part(new THREE.SphereGeometry(0.04, 12, 10), glove),
-      th: cap(0.078, L_TH - 0.15, breeches), sh: cap(0.056, L_SH - 0.1, boots), foot: part(new THREE.BoxGeometry(0.085, 0.07, 0.25), boots),
-      leatherS: part(new THREE.BoxGeometry(0.025, 1, 0.006), leatherM), iron: part(new THREE.TorusGeometry(0.05, 0.007, 6, 16), metal),
-    };
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.025, 1, 0.006), leatherM), iron = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.007, 6, 16), metal);
+    strap.castShadow = iron.castShadow = true; strap.visible = iron.visible = false; body.add(strap, iron);
+    stirrups[sx] = { strap, iron };
   }
   // reins live in world space (they span horse and rider)
   const reinMat = new THREE.MeshStandardMaterial({ color: dark, roughness: 0.7 }); mats.push(reinMat);
   const reinGeo = new THREE.CylinderGeometry(0.008, 0.008, 1, 5).translate(0, 0.5, 0);
   const reins = [[], []];
   for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) { const m = new THREE.Mesh(reinGeo, reinMat); m.castShadow = true; scene.add(m); R.extras.push(m); reins[r].push(m); }
+  const neck = at(0.42);
+  R.tack = {
+    bits, reins, stirrups, seat,
+    seatPos: new V3(0, seat.top + 0.045, 0.08),                                  // body-local: where the rider's pelvis sits
+    handsBody: new V3(0.085, at(0.45).top + 0.17, 0.5),                          // body-local: where the hands hold the reins
+    restBody: new V3(0, neck.top + 0.03, 0.42),                                  // body-local: reins resting on the neck
+    leatherTopBody: (sx) => new V3(sx * seat.w * 0.96, seat.top - 0.04, 0.13),
+    widthAt: (y) => { const dy = seat.y - y, h = dy > 0 ? seat.hb : seat.ht; return seat.w * Math.sqrt(Math.max(0, 1 - (dy / h) ** 2)); },
+  };
+}
 
-  // body half-width at the height of the rider's knee and foot, so legs wrap around the barrel
-  const widthAt = (y) => { const dy = seat.y - y, h = dy > 0 ? seat.hb : seat.ht; return seat.w * Math.sqrt(Math.max(0, 1 - (dy / h) ** 2)); };
-  const kneeY = seat.top + 0.045 - 0.36 * rs, footY = seat.top + 0.045 - 0.62 * rs;
-  const footX = Math.max(0.16, (widthAt(footY) + 0.07) / rs), kneeX = Math.max(0.17, (widthAt(kneeY) + 0.08) / rs);
-  // where the hands hold the reins, above the withers (in rider units)
-  const handBase = new V3(0.085, (at(0.45).top + 0.17 - rider.position.y) / rs, (0.5 - rider.position.z) / rs);
-  const leatherTop = (sx) => new V3(sx * (seat.w * 0.96) / rs, (seat.top - 0.04 - rider.position.y) / rs, (0.13 - rider.position.z) / rs);
+// the person: a figure that can sit in the saddle, lead a horse, or walk around on their own
+function buildPerson(look) {
+  const g = new THREE.Group();
+  const mats = [];
+  const M = (color, o = {}) => { const m = new THREE.MeshPhysicalMaterial({ color, roughness: 0.65, sheen: 0.3, sheenRoughness: 0.5, ...o }); mats.push(m); return m; };
+  const jacket = M(look.jacket), breeches = M(0xf1efe9, { roughness: 0.8 }), boots = M(0x111111, { roughness: 0.3, clearcoat: 0.6 }),
+    skin = M(look.skin, { roughness: 0.6 }), glove = M(0x161616), helmetM = M(0x15171c, { roughness: 0.45, sheen: 0.8 }), hair = M(look.hair, { roughness: 0.7, sheen: 0.6 });
+  const part = (geo, mat, parent = g) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
+  const cap = (r, len, mat) => part(new THREE.CapsuleGeometry(r, len, 4, 12), mat);
+  const pelvis = part(new THREE.SphereGeometry(0.15, 18, 12), breeches); pelvis.scale.set(1.15, 0.72, 0.95);
+  const torso = cap(0.14, 0.24, jacket); torso.scale.set(1.18, 1, 0.78);
+  const neckM = cap(0.045, 0.05, skin);
+  const headG = new THREE.Group(); g.add(headG);
+  const face = part(new THREE.SphereGeometry(0.092, 18, 14), skin, headG); face.scale.set(0.92, 1.05, 1);
+  const eyeM = new THREE.MeshStandardMaterial({ color: 0x2a1d16, roughness: 0.3 }); mats.push(eyeM);
+  for (const sx of [1, -1]) { const eye = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 6), eyeM); eye.position.set(sx * 0.03, -0.012, 0.086); headG.add(eye); }
+  const helmet = part(new THREE.SphereGeometry(0.106, 20, 12, 0, TAU, 0, Math.PI * 0.55), helmetM, headG); helmet.position.y = 0.022; helmet.rotation.x = -0.18;
+  const peak = part(new THREE.CylinderGeometry(0.06, 0.07, 0.012, 16, 1, false, -Math.PI / 2, Math.PI), helmetM, headG); peak.position.set(0, 0.01, 0.075); peak.rotation.x = 0.25;
+  if (look.bun) { const bun = part(new THREE.SphereGeometry(0.045, 12, 10), hair, headG); bun.position.set(0, -0.04, -0.1); }
+  if (look.bangs) {
+    // a fringe across the forehead under the helmet's peak, hair over the ears and a short ponytail
+    // (SphereGeometry: phi = π/2 faces forward)
+    const fringe = part(new THREE.SphereGeometry(0.1, 24, 10, Math.PI * 0.14, Math.PI * 0.72, Math.PI * 0.2, Math.PI * 0.27), hair, headG);
+    fringe.position.set(0, -0.004, 0.006);
+    for (const sx of [1, -1]) { const side = part(new THREE.SphereGeometry(0.05, 10, 8), hair, headG); side.scale.set(0.5, 1.2, 0.9); side.position.set(sx * 0.085, -0.03, -0.01); }
+    const tail = part(new THREE.CapsuleGeometry(0.03, 0.09, 4, 8), hair, headG); tail.position.set(0, -0.08, -0.105); tail.rotation.x = 0.4;
+  }
+  const L_TH = 0.43, L_SH = 0.43, L_UA = 0.28, L_FA = 0.26;
+  const limbs = {};
+  for (const sx of [1, -1]) {
+    limbs[sx] = {
+      ua: cap(0.046, L_UA - 0.09, jacket), fa: cap(0.04, L_FA - 0.08, jacket), hand: part(new THREE.SphereGeometry(0.04, 12, 10), glove),
+      th: cap(0.078, L_TH - 0.15, breeches), sh: cap(0.056, L_SH - 0.1, boots), foot: part(new THREE.BoxGeometry(0.085, 0.07, 0.25), boots),
+    };
+  }
+  return { look, size: look.size, group: g, mats, pelvis, torso, neckM, headG, limbs, L_TH, L_SH, L_UA, L_FA,
+    lean: 0, rise: 0, release: 0, walk: 0, mode: 'ride', horse: null, tr: 0, cfg: null,
+    x: 0, z: 0, yaw: 0, speed: 0, turn: 0 };
+}
 
-  R.rider = { group: rider, rs, size: look.size, seatPos: rider.position.clone(), mode: 'ride', tr: 0, walk: 0,
-    pelvis, torso, neckM, headG, limbs, reins, bits, footX, kneeX, handBase, leatherTop, lean: 0, rise: 0, release: 0,
-    L_TH, L_SH, L_UA, L_FA };
+// rider-local numbers for sitting on a particular horse
+function seatCfg(P, R) {
+  const t = R.tack, rs = P.size / R.B.S, sp = t.seatPos;
+  const kneeY = sp.y - 0.36 * rs, footY = sp.y - 0.62 * rs;
+  return {
+    rs,
+    footX: Math.max(0.16, (t.widthAt(footY) + 0.07) / rs), kneeX: Math.max(0.17, (t.widthAt(kneeY) + 0.08) / rs),
+    handBase: new V3(t.handsBody.x / rs, (t.handsBody.y - sp.y) / rs, (t.handsBody.z - sp.z) / rs),
+  };
 }
 
 const _p0 = new V3(), _u = new V3(), _sh = new V3(), _hd = new V3(), _hand = new V3(), _el = new V3(), _hip = new V3(), _ft = new V3(), _kn = new V3(), _pole = new V3();
 const _w1 = new V3(), _w2 = new V3(), _wc = new V3();
 // in the saddle: rising trot, half-seat, folding over jumps
-function poseRiding(R, s, g, dt) {
-  const r = R.rider, { ww, wt, wg, ph, jW, J } = g;
-  // posture targets: rising trot, half-seat at the gallop, folding over jumps, a lurch when the horse stops dead
+function poseRiding(P, R, s, g, dt) {
+  const r = P, c = P.cfg, { ww, wt, wg, ph, jW, J } = g;
   let lean = 0.06 + wt * 0.12 + wg * 0.55;
   let rise = wt * 0.085 * (0.5 + 0.5 * Math.cos(TAU * 2 * (ph - 0.32))) + wg * 0.11;
   let release = 0;
@@ -1310,39 +1659,29 @@ function poseRiding(R, s, g, dt) {
   _hd.copy(neckBase).add(_w2.set(0, Math.cos(r.lean * 0.4) * 0.11, Math.sin(r.lean * 0.4) * 0.11 + 0.025));
   placeSeg(r.neckM, neckBase, _w2.copy(neckBase).lerp(_hd, 0.6));
   r.headG.position.copy(_hd); r.headG.rotation.set(r.lean * 0.3 - 0.08, 0, roll * 0.5);
-
   for (const sx of [1, -1]) {
     const l = r.limbs[sx];
-    // arm: shoulder -> elbow -> hand on the reins
     const sh = _w1.copy(_p0).addScaledVector(_u, 0.41).addScaledVector(side, 0.17 * sx);
-    _hand.set(sx * r.handBase.x, r.handBase.y - r.release * 0.08, r.handBase.z + r.release * 0.2);
+    _hand.set(sx * c.handBase.x, c.handBase.y - r.release * 0.08, c.handBase.z + r.release * 0.2);
     _pole.set(sx * 0.5, -1, -0.6);
     ik2(sh, _hand, r.L_UA, r.L_FA, _pole, _el);
     placeSeg(l.ua, sh, _el); placeSeg(l.fa, _el, _hand); l.hand.position.copy(_hand);
-    // leg: hip -> knee -> foot in the stirrup
     _hip.copy(_p0).add(_w2.set(sx * 0.1, -0.01, 0.03));
-    _ft.set(sx * r.footX, -0.63, 0.1);
-    _pole.set(sx * (r.kneeX - 0.1) * 3, 0.1, 1);
+    _ft.set(sx * c.footX, -0.63, 0.1);
+    _pole.set(sx * (c.kneeX - 0.1) * 3, 0.1, 1);
     ik2(_hip, _ft, r.L_TH, r.L_SH, _pole, _kn);
     placeSeg(l.th, _hip, _kn); placeSeg(l.sh, _kn, _ft);
     l.foot.position.copy(_ft).add(_w2.set(0, -0.03, 0.06)); l.foot.rotation.set(0, 0, 0);
-    // stirrup leather and iron
-    const top = r.leatherTop(sx), bottom = _w2.copy(_ft).add(_w1.set(0, -0.04, 0.02));
-    l.leatherS.position.addVectors(top, bottom).multiplyScalar(0.5); l.leatherS.scale.y = top.distanceTo(bottom);
-    _d.subVectors(top, bottom).normalize(); l.leatherS.quaternion.setFromUnitVectors(_Y, _d);
-    l.iron.position.copy(bottom); l.iron.rotation.set(0, Math.PI / 2, 0);
-    l.leatherS.visible = l.iron.visible = true;
   }
-
 }
 
-// on foot beside the horse's left shoulder, leading it by the reins
-function poseStanding(R, s, dt, time) {
-  const r = R.rider, vr = Math.abs(s.speed) / r.size, dir = Math.sign(s.speed) || 1;   // speed in rider units
+// standing or walking. hold = the horse whose reins the near hand holds (or null to walk freely)
+function poseStanding(P, speed, dt, hold) {
+  const r = P, vr = Math.abs(speed) / r.size, dir = Math.sign(speed) || 1;   // speed in person units
   const moving = clamp(vr / 0.4, 0, 1);
-  const f = 0.8 + 0.45 * Math.min(vr, 4);                                                // stride cycles per second
+  const f = 0.8 + 0.45 * Math.min(vr, 4);                                     // stride cycles per second
   r.walk = (((r.walk + dir * f * dt * moving) % 1) + 1) % 1;
-  const L = clamp(vr * 0.5 / f, 0, 1.1) * moving;                                         // how far each foot travels
+  const L = clamp(vr * 0.5 / f, 0, 1.1) * moving;                              // how far each foot travels
   const run = clamp((vr - 2.2) / 1.5, 0, 1);
   r.lean = damp(r.lean, 0.04 + 0.16 * run, 6, dt);
   _p0.set(0, 0.93 - 0.03 * Math.abs(Math.sin(TAU * r.walk)) * moving - 0.06 * run, 0);
@@ -1353,20 +1692,21 @@ function poseStanding(R, s, dt, time) {
   const neckBase = _w1.copy(_p0).addScaledVector(_u, 0.47);
   _hd.copy(neckBase).add(_w2.set(0, 0.11, 0.02));
   placeSeg(r.neckM, neckBase, _w2.copy(neckBase).lerp(_hd, 0.6));
-  r.headG.position.copy(_hd); r.headG.rotation.set(-0.05, -0.3 * (1 - moving * 0.6), 0);   // keeps an eye on the horse
-  R.root.updateMatrixWorld(true);
-  // the hand nearest the horse holds the reins a little below the bit
-  r.bits[0].getWorldPosition(_w1); r.bits[1].getWorldPosition(_w2); _wc.addVectors(_w1, _w2).multiplyScalar(0.5);
-  r.group.worldToLocal(_wc);
+  r.headG.position.copy(_hd); r.headG.rotation.set(-0.05, hold ? -0.3 * (1 - moving * 0.6) : 0, 0);   // keeps an eye on the horse
+  if (hold) {
+    hold.root.updateMatrixWorld(true); r.group.updateMatrixWorld(true);
+    hold.tack.bits[0].getWorldPosition(_w1); hold.tack.bits[1].getWorldPosition(_w2); _wc.addVectors(_w1, _w2).multiplyScalar(0.5);
+    r.group.worldToLocal(_wc);
+  }
   for (const sx of [1, -1]) {
     const l = r.limbs[sx];
     const sh = _w1.copy(_p0).addScaledVector(_u, 0.41).addScaledVector(side, 0.17 * sx);
-    if (sx < 0) _hand.copy(_wc).add(_w2.set(0.16, -0.12, -0.22));
-    else _hand.copy(sh).add(_w2.set(0.05, -0.52, 0.04 - 0.16 * Math.sin(TAU * r.walk) * moving * (0.6 + run)));
+    const swing = Math.sin(TAU * r.walk + (sx > 0 ? 0 : Math.PI)) * moving * (0.6 + run);
+    if (hold && sx < 0) _hand.copy(_wc).add(_w2.set(0.16, -0.12, -0.22));
+    else _hand.copy(sh).add(_w2.set(sx * 0.05, -0.52, 0.04 - 0.16 * swing));
     _pole.set(sx * 0.4, -1, -0.5);
     ik2(sh, _hand, r.L_UA, r.L_FA, _pole, _el);
     placeSeg(l.ua, sh, _el); placeSeg(l.fa, _el, _hand); l.hand.position.copy(_hand);
-    // legs: a simple walking (or running) step cycle
     const p = (r.walk + (sx > 0 ? 0 : 0.5)) % 1;
     let fz, fy;
     if (p < 0.5) { fz = (0.5 - p * 2) * L * 0.5; fy = 0; }
@@ -1377,57 +1717,82 @@ function poseStanding(R, s, dt, time) {
     ik2(_hip, _ft, r.L_TH, r.L_SH, _pole, _kn);
     placeSeg(l.th, _hip, _kn); placeSeg(l.sh, _kn, _ft);
     l.foot.position.copy(_ft).add(_w2.set(0, -0.03, 0.06)); l.foot.rotation.set(fy * 2, 0, 0);
-    l.leatherS.visible = l.iron.visible = false;                                          // stirrups run up while leading
   }
 }
 
-// where the rider stands when leading: by the horse's left shoulder, on the ground (horse-root units)
-function leadSpot(R, out) {
+// where the person stands when leading: by the horse's left shoulder, on the ground (horse-root units)
+function leadSpot(R, size, out) {
   const B = R.B, S = B.S;
-  out.set(0.32 * B.bodyW + 0.42 * R.rider.size / S, 0, 0.95);
+  out.set(0.32 * B.bodyW + 0.42 * size / S, 0, 0.95);
   _w1.copy(out); R.root.localToWorld(_w1);
   out.y = (groundH(_w1.x, _w1.z) - R.root.position.y) / S;
   return out;
 }
 const _spot = new V3(), _seat = new V3();
-function updateRider(R, s, g, dt, time) {
-  const r = R.rider;
-  if (r.mode === 'ride') poseRiding(R, s, g, dt);
-  else if (r.mode === 'off') { r.group.position.copy(leadSpot(R, _spot)); poseStanding(R, s, dt, time); }
-  else {
-    // getting off or on: hop between the saddle and the ground
-    r.tr = Math.min(1, r.tr + dt / 0.9);
-    leadSpot(R, _spot);
-    R.body.updateMatrixWorld(true);
-    _seat.copy(r.seatPos); R.body.localToWorld(_seat); R.root.worldToLocal(_seat);
-    const off = r.mode === 'toOff', u = smooth(r.tr);
-    const a = off ? _seat : _spot, b = off ? _spot : _seat;
-    r.group.position.lerpVectors(a, b, u).y += Math.sin(Math.PI * r.tr) * 0.35 * r.size / R.B.S;
-    if (off ? r.tr < 0.45 : r.tr > 0.55) poseRiding(R, s, g, dt); else poseStanding(R, s, dt, time);
-    if (r.tr >= 1) {
-      if (off) r.mode = 'off';
-      else snapMount(R);
-      onMountChanged();
+// the person while attached to a horse (riding, leading, or getting on/off), plus the horse's reins and stirrups
+function updateTack(R, s, g, dt, time) {
+  const t = R.tack, P = player;
+  const mine = P && P.horse === R;
+  if (mine) {
+    if (P.mode === 'ride') poseRiding(P, R, s, g, dt);
+    else if (P.mode === 'lead') { P.group.position.copy(leadSpot(R, P.size, _spot)); poseStanding(P, s.speed, dt, R); }
+    else if (P.mode === 'toLead' || P.mode === 'toRide') {
+      // getting off or on: hop between the saddle and the ground
+      P.tr = Math.min(1, P.tr + dt / 0.9);
+      leadSpot(R, P.size, _spot);
+      R.body.updateMatrixWorld(true);
+      _seat.copy(t.seatPos); R.body.localToWorld(_seat); R.root.worldToLocal(_seat);
+      const off = P.mode === 'toLead', u = smooth(P.tr);
+      const a = off ? _seat : _spot, b = off ? _spot : _seat;
+      P.group.position.lerpVectors(a, b, u).y += Math.sin(Math.PI * P.tr) * 0.35 * P.size / R.B.S;
+      if (off ? P.tr < 0.45 : P.tr > 0.55) poseRiding(P, R, s, g, dt); else poseStanding(P, 0, dt, R);
+      if (P.tr >= 1) { if (off) P.mode = 'lead'; else seatPerson(P, R); onModeChanged(); }
     }
   }
-
-  // reins: from each bit ring to the matching hand, with a little sag
+  // stirrups hang from the saddle to the rider's feet; run up when nobody's riding
+  const riding = mine && P.mode === 'ride';
+  for (const sx of [1, -1]) {
+    const st2 = t.stirrups[sx];
+    st2.strap.visible = st2.iron.visible = riding;
+    if (!riding) continue;
+    const top = t.leatherTopBody(sx);
+    _w2.copy(P.limbs[sx].foot.position).add(_w1.set(0, -0.01, -0.04)).multiplyScalar(P.cfg.rs).add(P.group.position);
+    st2.strap.position.addVectors(top, _w2).multiplyScalar(0.5); st2.strap.scale.y = top.distanceTo(_w2);
+    _d.subVectors(top, _w2).normalize(); st2.strap.quaternion.setFromUnitVectors(_Y, _d);
+    st2.iron.position.copy(_w2); st2.iron.rotation.set(0, Math.PI / 2, 0);
+  }
+  // reins: from each bit ring to the rider's hands, or resting on the horse's neck
   R.root.updateMatrixWorld(true);
+  const held = mine && P.mode !== 'free';
   for (let k = 0; k < 2; k++) {
-    const sx = r.mode === 'ride' ? (k === 0 ? 1 : -1) : -1;           // on foot, one hand holds both reins
-    r.bits[k].getWorldPosition(_w1);
-    r.limbs[sx].hand.getWorldPosition(_w2);
+    t.bits[k].getWorldPosition(_w1);
+    if (held) P.limbs[P.mode === 'ride' ? (k === 0 ? 1 : -1) : -1].hand.getWorldPosition(_w2);
+    else { _w2.copy(t.restBody); _w2.x = (k === 0 ? 1 : -1) * 0.06; R.body.localToWorld(_w2); }
     const dist = _w1.distanceTo(_w2);
-    _wc.addVectors(_w1, _w2).multiplyScalar(0.5); _wc.y -= dist * (0.07 + 0.05 * (1 - r.release));
+    _wc.addVectors(_w1, _w2).multiplyScalar(0.5); _wc.y -= dist * (held ? 0.07 + 0.05 * (1 - P.release) : 0.12);
     let prev = _a.copy(_w1);
     for (let i = 0; i < 6; i++) {
-      const t = (i + 1) / 6, it = 1 - t;
-      const nx = it * it * _w1.x + 2 * it * t * _wc.x + t * t * _w2.x, ny = it * it * _w1.y + 2 * it * t * _wc.y + t * t * _w2.y, nz = it * it * _w1.z + 2 * it * t * _wc.z + t * t * _w2.z;
-      const m = r.reins[k][i];
+      const tt = (i + 1) / 6, it = 1 - tt;
+      const nx = it * it * _w1.x + 2 * it * tt * _wc.x + tt * tt * _w2.x, ny = it * it * _w1.y + 2 * it * tt * _wc.y + tt * tt * _w2.y, nz = it * it * _w1.z + 2 * it * tt * _wc.z + tt * tt * _w2.z;
+      const m = t.reins[k][i];
       m.position.copy(prev); _b.set(nx, ny, nz); _d.subVectors(_b, prev); m.scale.set(1, _d.length(), 1); m.quaternion.setFromUnitVectors(_Y, _d.normalize());
       prev = _a.set(nx, ny, nz);
     }
   }
+}
+// sit the person exactly in this horse's saddle
+function seatPerson(P, R) {
+  P.horse = R; P.cfg = seatCfg(P, R);
+  R.body.attach(P.group);
+  P.group.position.copy(R.tack.seatPos); P.group.quaternion.identity(); P.group.scale.setScalar(P.cfg.rs);
+  P.mode = 'ride';
+}
+// stand the person at this horse's left shoulder, holding the reins
+function standAtLead(P, R) {
+  P.horse = R; P.cfg = seatCfg(P, R);
+  R.root.attach(P.group);
+  P.group.position.copy(leadSpot(R, P.size, _spot)); P.group.quaternion.identity(); P.group.scale.setScalar(P.size / R.B.S);
+  P.mode = 'lead';
 }
 
 // ---------------------------------------------------------------- gaits
@@ -1541,7 +1906,7 @@ function noiseHit(t, { type = 'lowpass', freq = 800, q = 1, peak = 0.5, attack =
   return f;
 }
 function hoofSound(intensity, pan) {
-  if (!audioOk() || intensity < 0.01) return;
+  if (!audioOk() || !(intensity >= 0.01)) return;
   const t = actx.currentTime + 0.005;
   noiseHit(t, { freq: 700 + Math.random() * 400, peak: 0.5 * intensity, decay: 0.09, rate: 0.8 + Math.random() * 0.4, pan });
   const o = actx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(110 + Math.random() * 20, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.1);
@@ -1690,40 +2055,10 @@ const keys = {};
 let gait = 0;
 const hudG = [...document.querySelectorAll('.gaits span')];
 const hudS = document.getElementById('spd');
+let player = null, personIdx = 0;   // you (see buildPerson)
+const onFoot = () => !!player && player.mode !== 'ride';
 function setGait(g) { gait = clamp(g, -1, onFoot() ? 2 : 3); hudG.forEach((el, i) => el.classList.toggle('on', i - 1 === gait)); }
 const gaitSpeed = (g) => g < 0 ? -0.9 : GAIT_SPEED[g];
-function playerControl() {
-  const tIn = ((keys.ArrowLeft || keys.a || keys.A) ? 1 : 0) - ((keys.ArrowRight || keys.d || keys.D) ? 1 : 0);
-  const busy = H.rider && (H.rider.mode === 'toOff' || H.rider.mode === 'toOn');   // standing still while getting on or off
-  return { target: busy ? 0 : gaitSpeed(gait) * H.B.speed, turnIn: busy ? 0 : tIn, player: true, vol: 1, rearHeld: spaceHold.down };
-}
-// Getting off to lead the horse on foot, and back on again
-const onFoot = () => !!(H && H.rider && H.rider.mode !== 'ride');
-function snapMount(R) {
-  const r = R.rider;
-  R.body.attach(r.group);
-  r.group.position.copy(r.seatPos); r.group.quaternion.identity(); r.group.scale.setScalar(r.rs);
-  r.mode = 'ride';
-}
-function toggleMount() {
-  if (!H || !H.rider) return;
-  const r = H.rider;
-  if (r.mode === 'toOff' || r.mode === 'toOn') return;
-  if (Math.abs(st.speed) > 0.3 || st.jump || st.rear || st.stun > 0) { toast(r.mode === 'ride' ? 'Halt first to get off' : 'Halt first to get on', 'info'); return; }
-  setGait(0);
-  if (r.mode === 'ride') H.root.attach(r.group);
-  r.mode = r.mode === 'ride' ? 'toOff' : 'toOn'; r.tr = 0;
-  onMountChanged();
-}
-function onMountChanged() {
-  const b = document.getElementById('mountBtn'); if (!b || !H) return;
-  const m = H.rider ? H.rider.mode : 'ride';
-  b.textContent = m === 'ride' || m === 'toOn' ? 'Get off' : 'Get on';
-  b.title = (m === 'ride' || m === 'toOn' ? 'Get off and lead your horse on foot' : 'Get back in the saddle') + ' (E)';
-  if (m === 'off') toast('Leading on foot · walk or trot', 'info');
-  if (gait > 2 && onFoot()) setGait(2);
-}
-
 // Space: a tap jumps. Held at a standstill the horse rears and calls out; held while moving it just calls.
 const HOLD_T = 1.5;                                // seconds Space must be held before the horse rears or calls
 const spaceHold = { down: false, t: 0, standing: false, done: false };
@@ -1743,6 +2078,7 @@ function updateSpaceHold(dt) {
   spaceHold.t += dt;
   if (spaceHold.t < HOLD_T) return;
   spaceHold.done = true;
+  if (!player.horse) return;
   if (spaceHold.standing && !isMoving() && st.stun <= 0 && !onFoot()) { st.rear = { phase: 'up', t: 0 }; st.idle = 0; neigh(H.B, 1); }
   else neigh(H.B, 0.9);
 }
@@ -1754,16 +2090,15 @@ const breedBtns = BREEDS.map((b, i) => {
   const el = document.createElement('button');
   const sw = '#' + new THREE.Color(b.coat).getHexString();
   const sw2 = '#' + new THREE.Color(b.pattern === 'pinto' ? WHITE : b.hair).getHexString();
-  el.innerHTML = `<span class="sw" style="background:linear-gradient(135deg, ${sw} 55%, ${sw2} 55%)"></span><span><b>${b.name}</b><small>${b.kind}</small></span>`;
-  el.title = b.desc;
-  el.addEventListener('click', () => { setBreed(i); el.blur(); });
+  el.innerHTML = `<span class="sw" style="background:linear-gradient(135deg, ${sw} 55%, ${sw2} 55%)"></span><span><b>${stallBoxes[i].name}</b><small>${b.name}</small></span>`;
+  el.title = `${stallBoxes[i].name} the ${b.name.toLowerCase()} (${b.desc.toLowerCase()})`;
+  el.addEventListener('click', () => { switchToHorse(i); el.blur(); });
   el.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key.startsWith('Arrow')) e.preventDefault(); });
   breedBox.appendChild(el);
   return el;
 });
 function onBreedChanged() {
   breedBtns.forEach((el, i) => el.classList.toggle('on', i === breedIdx));
-  onMountChanged();
 }
 addEventListener('keydown', (e) => {
   const k = e.key;
@@ -1774,14 +2109,16 @@ addEventListener('keydown', (e) => {
     if ((k === 'ArrowUp' || k === 'w' || k === 'W') && st && st.stun <= 0) setGait(gait + 1);
     if (k === 'r' || k === 'R') resetCourse();
     if (k === 'c' || k === 'C') setCourse(courseIdx + 1);
-    if (k === 'e' || k === 'E') toggleMount();
+    if (k === 'e' || k === 'E') actionE();
+    if (k === 'q' || k === 'Q') letGo();
+    if (k === 'p' || k === 'P') setPerson(personIdx + 1);
     if (k === 't' || k === 'T') setEnv(timeIdx + 1, wxIdx);
     if (k === 'y' || k === 'Y') pickWeather(wxIdx + 1);
     if (k === 'u' || k === 'U') { setWeatherAuto(!wxAuto); toast(wxAuto ? 'Auto weather on' : 'Manual weather: press Y to choose', 'info'); }
     if (k === 'ArrowDown' || k === 's' || k === 'S') setGait(gait - 1);
     if (k === ' ') spacePress();
     if (k === 'm' || k === 'M') setMuted(!muted);
-    if (k >= '1' && k <= String(BREEDS.length)) setBreed(+k - 1);
+    if (k >= '1' && k <= String(BREEDS.length)) switchToHorse(+k - 1);
   }
   keys[k] = true;
 });
@@ -1849,10 +2186,12 @@ function updateScore() { scoreEl.innerHTML = `<span class="good">✓ ${score.cle
 function crash(hit, v, air) {
   const J = st.jump;
   let msg;
-  if (hit.bank) {
+  if (hit.wall) {
+    msg = 'Whoa! Ran into the wall';
+  } else if (hit.bank) {
     msg = air ? 'Too low to land on the bank' : 'Jump up the bank!';
   } else if (hit.c) {
-    msg = hit.c.type === 'horse' ? 'Watch out for the other horses!' : hit.c.type === 'tree' ? 'Ouch! Ran into a tree' : hit.c.type === 'wing' ? 'Hit the wing — aim for the middle'
+    msg = hit.c.type === 'horse' ? 'Watch out for the other horses!' : hit.c.type === 'bale' ? 'Bumped into the hay bale' : hit.c.type === 'tree' ? 'Ouch! Ran into a tree' : hit.c.type === 'wing' ? 'Hit the wing — aim for the middle'
       : air ? 'Too low — hit the rock' : 'Blocked by a rock — jump it!';
   } else {
     const f = hit.f; f.faultT = 0;
@@ -1884,6 +2223,7 @@ function checkCollisions(dt) {
   const offs = [0.95 * S, 0, -0.85 * S];                      // chest, barrel, hindquarters
   let hit = null;
   for (const c of colliders) {
+    if (c.owner === H) continue;
     if (Math.abs(st.x - c.x) > c.r + 2.5 || Math.abs(st.z - c.z) > c.r + 2.5) continue;
     if (clearOver(c.y ?? st.rootY) >= c.h) continue;
     for (const o of offs) {
@@ -1933,6 +2273,21 @@ function checkCollisions(dt) {
       if (!hit) hit = { f, nx: f.az.x * sgn, nz: f.az.z * sgn };
     }
   }
+  // stable and arena walls (solid, any height)
+  for (const w of walls) {
+    if (st.x < w.minX - 3 || st.x > w.maxX + 3 || st.z < w.minZ - 3 || st.z > w.maxZ + 3) continue;
+    for (const o of offs) {
+      const px = st.x + fx * o, pz = st.z + fz * o;
+      const qx = clamp(px, w.minX, w.maxX), qz = clamp(pz, w.minZ, w.maxZ);
+      let dx = px - qx, dz = pz - qz, d = Math.hypot(dx, dz);
+      if (d >= r) continue;
+      if (d < 1e-4) {   // inside the wall: push out the shortest way
+        const opts = [[px - w.minX, -1, 0], [w.maxX - px, 1, 0], [pz - w.minZ, 0, -1], [w.maxZ - pz, 0, 1]].sort((a, b) => a[0] - b[0])[0];
+        dx = opts[1]; dz = opts[2]; d = 0; st.x += dx * (opts[0] + r); st.z += dz * (opts[0] + r);
+      } else { dx /= d; dz /= d; st.x += dx * (r - d); st.z += dz * (r - d); }
+      if (!hit) hit = { wall: true, nx: dx, nz: dz };
+    }
+  }
   // banks and other steps up are too high to walk up: they have to be jumped
   {
     const o = st.speed >= 0 ? 0.95 * S : -0.85 * S;
@@ -1944,7 +2299,8 @@ function checkCollisions(dt) {
   }
   if (hit && st.stun <= 0) {
     const into = -(fx * hit.nx + fz * hit.nz);
-    if (into > 0.3 && (st.speed > 0.6 || air)) crash(hit, st.speed, air);
+    const soft = hit.wall || (hit.c && hit.c.type === 'bale');      // walking into these just stops you
+    if (into > 0.3 && (st.speed > (soft ? 2.5 : 0.6) || air)) crash(hit, st.speed, air);
   }
 }
 
@@ -1952,13 +2308,14 @@ const COURSES = [
   { key: 'main', name: 'Show-jumping arena' },
   { key: 'pony', name: 'Pony arena' },
   { key: 'xc', name: 'Cross-country' },
+  { key: 'stable', name: 'Stable yard' },
 ];
 let courseIdx = 0;
 function resetCourse(msg = 'Course reset') {
   fences.forEach(f => { resetFence(f); f.faultT = 99; f.side = 0; f.clipped = false; });
-  if (H && H.rider && H.rider.mode !== 'ride') { snapMount(H); onMountChanged(); }
+  if (player && player.mode !== 'ride') { if (!player.horse) scene.remove(player.group); seatPerson(player, H); onModeChanged(); }
   score.clears = score.faults = 0; updateScore();
-  placeAtStart(); st.speed = 0; st.jump = null; st.rear = null; st.stun = 0; st.rvx = st.rvz = 0; st.rootY = groundH(st.x, st.z); setGait(0);
+  placeAtStart(); st.speed = 0; st.jump = null; st.rear = null; st.eatHay = null; st.stun = 0; st.rvx = st.rvz = 0; st.rootY = groundH(st.x, st.z); setGait(0);
   toast(msg, 'info');
 }
 // switch course: ride to its start, with a clean score
@@ -1970,6 +2327,12 @@ function setCourse(i) {
 }
 // start on the track, lined up 14 m before the course's first fence
 function placeAtStart() {
+  if (COURSES[courseIdx].key === 'stable') {
+    // in the yard, facing the barn's big doorway
+    st.x = STABLE.x + 26; st.z = STABLE.z; st.yaw = -Math.PI / 2; st.prevX = st.x; st.prevZ = st.z;
+    camState.yaw = st.yaw; camState.pos.set(st.x - Math.sin(st.yaw) * 7, STABLE.y + 2.5, st.z - Math.cos(st.yaw) * 7);
+    return;
+  }
   const f = fences.find(f => f.course === COURSES[courseIdx].key) ?? fences[0];
   st.x = f.x - f.az.x * 14; st.z = f.z - f.az.z * 14; st.yaw = f.ang; st.prevX = st.x; st.prevZ = st.z;
   camState.yaw = st.yaw; camState.pos.set(st.x - Math.sin(st.yaw) * 7, 2.5, st.z - Math.cos(st.yaw) * 7);
@@ -2171,15 +2534,32 @@ function updateRig(R, s, ctl, dt, time) {
   }
 
   // --- head & neck
-  s.graze = damp(s.graze, s.idle > 6 ? 1 : 0, s.idle > 6 ? 0.8 : 3, dt);
+  const hay = s.eatHay;
+  const grazeTo = hay ? (hay.low ? 1 : 0.55) : s.idle > 6 ? 1 : 0;
+  s.graze = damp(s.graze, grazeTo, hay ? 2.5 : s.idle > 6 ? 0.8 : 3, dt);
+  let hayTurn = 0;
+  if (hay) {
+    let a = Math.atan2(hay.x - s.x, hay.z - s.z) - s.yaw; a = Math.atan2(Math.sin(a), Math.cos(a));
+    hayTurn = clamp(a, -0.6, 0.6) * s.graze;
+    eatHay(s, hay, dt, ctl.vol, ctl.player ? 0 : panOf(R.root.position));
+  }
   const gz = s.graze;
   const nod = ww * 0.06 * Math.sin(TAU * 2 * (ph - 0.1)) + wt * 0.015 * Math.sin(TAU * 2 * ph) + wg * 0.12 * Math.sin(TAU * (ph - 0.2));
   const grazeMove = gz * 0.04 * Math.sin(time * 0.7) * Math.sin(time * 0.31);
-  neck.rotation.x = 0.1 + wg * 0.14 + wt * 0.06 + nod * gw + gz * (B.graze ?? 1.05) + grazeMove + jNeck - s.slope * 0.5 + 0.3 * rw;
-  neck.rotation.y = s.turn * 0.22 + gz * 0.12 * Math.sin(time * 0.23);
-  head.rotation.x = 0.82 - wg * 0.18 + gz * 0.25 + 0.03 * Math.sin(time * 0.9) * (1 - clamp(aSpd, 0, 1)) + rw * (0.1 + 0.12 * Math.sin(time * 3.1));
+  // chewing: the jaw opens and closes about one and a half times a second, grinding a little from side to side,
+  // and every few seconds the horse tugs its head up to tear off a fresh mouthful
+  const ch = hay ? gz : gz * 0.75;
+  s.chew = (s.chew ?? Math.random() * TAU) + dt * TAU * 1.55 * (ch > 0.05 ? 1 : 0);
+  const seed = (s.seed ??= Math.random() * 10);
+  const tug = hay ? Math.pow(Math.max(0, Math.sin(time * 0.8 + seed)), 4) * gz : 0;
+  R.jaw.rotation.x = ch * 0.36 * (0.5 + 0.5 * Math.sin(s.chew));
+  R.jaw.rotation.y = ch * 0.05 * Math.sin(s.chew + 1.2);
+  neck.rotation.x = 0.1 + wg * 0.14 + wt * 0.06 + nod * gw + gz * (B.graze ?? 1.05) + grazeMove + jNeck - s.slope * 0.5 + 0.3 * rw - 0.2 * tug;
+  neck.rotation.y = s.turn * 0.22 + (hay ? hayTurn : gz * 0.12 * Math.sin(time * 0.23));
+  head.rotation.x = 0.82 - wg * 0.18 + gz * 0.25 + 0.03 * Math.sin(time * 0.9) * (1 - clamp(aSpd, 0, 1)) + rw * (0.1 + 0.12 * Math.sin(time * 3.1))
+    + ch * 0.1 * Math.sin(s.chew - 0.6) - 0.12 * tug;
   head.rotation.y = s.turn * 0.15;
-  head.rotation.z = gz * 0.05 * Math.sin(time * 4.5); // chewing wiggle
+  head.rotation.z = ch * 0.08 * Math.sin(s.chew * 0.5); // side-to-side grind
 
   // ears: forward when moving, random flicks when idle
   for (const e of ears) {
@@ -2207,7 +2587,7 @@ function updateRig(R, s, ctl, dt, time) {
   s.fast = aSpd / SM > 3 ? 1 : s.fast;
   if (s.fast && aSpd < 0.1) { s.fast = 0; if (ctl.vol > 0.05) snort(B, ctl.vol); }
 
-  if (R.rider) updateRider(R, s, { ww, wt, wg, ph, d: G.d, jW, J, aSpd, refV, rw }, dt, time);
+  if (R.tack) updateTack(R, s, { ww, wt, wg, ph, d: G.d, jW, J, aSpd, refV, rw }, dt, time);
 }
 
 function footfall(R, s, L, i, ctl, refV, wg) {
@@ -2227,17 +2607,24 @@ function footfall(R, s, L, i, ctl, refV, wg) {
 // ---------------------------------------------------------------- camera
 const camState = { yaw: 0, pos: new V3(0, 2.5, -7), look: new V3() };
 function updateCamera(dt, time) {
-  if (!dragging && time - lastDrag > 2.5 && Math.abs(st.speed) > 0.3) camYawOff = damp(camYawOff, 0, 0.8, dt);
-  let d = st.yaw + camYawOff - camState.yaw;
+  const F = camFocus();
+  if (!dragging && time - lastDrag > 2.5 && Math.abs(F.speed) > 0.3) camYawOff = damp(camYawOff, 0, 0.8, dt);
+  let d = F.yaw + camYawOff - camState.yaw;
   d = Math.atan2(Math.sin(d), Math.cos(d));
   camState.yaw += d * (1 - Math.exp(-(dragging ? 20 : 3) * dt));
-  const tgt = new V3(st.x, lerp(groundH(st.x, st.z), st.rootY, 0.6) + (1.25 - 0.3 * st.graze) * H.B.S * (0.6 + 0.4 * H.B.k), st.z);
-  const dist = camDist * (1 + clamp(Math.abs(st.speed) / 9.5, 0, 1) * 0.15) * (0.45 + 0.55 * H.B.S);
+  const tgt = new V3(F.x, F.base + F.h, F.z);
+  const dist = camDist * (1 + clamp(Math.abs(F.speed) / 9.5, 0, 1) * 0.15) * F.scale;
   const want = new V3(
     tgt.x - Math.sin(camState.yaw) * Math.cos(camPitch) * dist,
     tgt.y + Math.sin(camPitch) * dist,
     tgt.z - Math.cos(camState.yaw) * Math.cos(camPitch) * dist);
   want.y = Math.max(want.y, groundH(want.x, want.z) + 0.5);
+  // inside a building, keep the camera within its walls
+  const reg = interiors.find(b => F.x > b.minX && F.x < b.maxX && F.z > b.minZ && F.z < b.maxZ);
+  if (reg) {
+    want.x = clamp(want.x, reg.minX + 0.3, reg.maxX - 0.3); want.z = clamp(want.z, reg.minZ + 0.3, reg.maxZ - 0.3);
+    if (reg.overWalls) want.y = Math.max(want.y, F.base + reg.overWalls);
+  }
   camState.pos.lerp(want, 1 - Math.exp(-10 * dt));
   camState.look.lerp(tgt, 1 - Math.exp(-12 * dt));
   camera.position.copy(camState.pos);
@@ -2245,10 +2632,10 @@ function updateCamera(dt, time) {
   camera.lookAt(camState.look);
 
   // shadow + grass follow
-  sun.position.set(st.x, st.rootY, st.z).addScaledVector(sunDir, 40);
-  sun.target.position.set(st.x, st.rootY, st.z);
+  sun.position.set(F.x, F.rootY, F.z).addScaledVector(sunDir, 40);
+  sun.target.position.set(F.x, F.rootY, F.z);
   const fwd = new V3().subVectors(camState.look, camState.pos).setY(0).normalize();
-  grass.material.uniforms.uCenter.value.set(st.x + fwd.x * 14, 0, st.z + fwd.z * 14);
+  grass.material.uniforms.uCenter.value.set(F.x + fwd.x * 14, 0, F.z + fwd.z * 14);
   grass.material.uniforms.uHorse.value.set(st.x, 0, st.z);
   grass.material.uniforms.uTime.value = time;
   sky.position.copy(camera.position);
@@ -2454,7 +2841,7 @@ const birds = (() => {
   const groundSpot = () => {
     for (let i = 0; i < 50; i++) {
       const a = Math.random() * TAU, r = 18 + Math.random() * 140, x = 10 + Math.cos(a) * r, z = 30 + Math.sin(a) * r;
-      if (!inWater(x, z) && bankMask(x, z) < 0.01 && !fences.some(f => Math.hypot(f.x - x, f.z - z) < 8)) return new V3(x, 0, z);
+      if (!inWater(x, z) && bankMask(x, z) < 0.01 && Math.hypot(x - STABLE.x, z - STABLE.z + 13) > 42 && !fences.some(f => Math.hypot(f.x - x, f.z - z) < 8)) return new V3(x, 0, z);
     }
     return new V3(60, 0, -20);
   };
@@ -2539,7 +2926,7 @@ function panOf(p) {
 
 // ---------------------------------------------------------------- loose horses grazing in the meadow
 const herd = [1, 3, 4].map((bi, i) => {
-  const B = BREEDS[bi], R = buildHorse(B, { rider: false });
+  const B = BREEDS[bi], R = buildHorse(B, { tack: false });
   const a = i * 2.1, s = newRigState(MEADOW.x + Math.cos(a) * 8, MEADOW.z + Math.sin(a) * 8, Math.random() * TAU);
   s.idle = 10; s.graze = 1;
   scene.add(R.root);
@@ -2577,7 +2964,233 @@ function answerNeigh() {
   if (d < 90 && Math.random() < 0.6) setTimeout(() => neigh(h.R.B, clamp(1 - d / 90, 0.1, 1) * 0.45, panOf(h.R.root.position)), 1300 + Math.random() * 900);
 }
 
+// ---------------------------------------------------------------- the five horses you can ride, each living in a box in the stable
+const horses = BREEDS.map((B, i) => {
+  const box = stallBoxes[i];
+  const R = buildHorse(B); scene.add(R.root);
+  const s = newRigState(box.x, box.z, box.yaw); s.eatHay = box.hay; s.graze = 1;
+  const cols = [0, 1].map(() => ({ type: 'horse', owner: R, x: s.x, z: s.z, r: 0.55 * B.S, h: Infinity }));
+  colliders.push(...cols);
+  return { i, B, R, s, box, name: box.name, cols };
+});
+const horseOf = (R) => horses.find(h => h.R === R);
+function sendHome(h) {
+  const b = h.box;
+  Object.assign(h.s, { x: b.x, z: b.z, yaw: b.yaw, prevX: b.x, prevZ: b.z, speed: 0, jump: null, rear: null, stun: 0, rvx: 0, rvz: 0, eatHay: b.hay, graze: 1, idle: 10 });
+  h.s.rootY = groundH(b.x, b.z);
+}
+// the horses you're not on: stand, graze, and eat any hay within reach
+function autoEat(h) {
+  const s = h.s;
+  if (s.eatHay || Math.abs(s.speed) > 0.2) return;
+  const S = h.B.S, nx = s.x + Math.sin(s.yaw) * 1.35 * S, nz = s.z + Math.cos(s.yaw) * 1.35 * S;
+  for (const hy of haySpots) if (hy.amount > 0.02 && Math.hypot(hy.x - nx, hy.z - nz) < hy.reach) { s.eatHay = hy; return; }
+}
+function updateStableHorses(dt, time) {
+  for (const h of horses) {
+    const fx = Math.sin(h.s.yaw) * 0.45 * h.B.S, fz = Math.cos(h.s.yaw) * 0.45 * h.B.S;
+    h.cols[0].x = h.s.x + fx; h.cols[0].z = h.s.z + fz; h.cols[1].x = h.s.x - fx; h.cols[1].z = h.s.z - fz;
+    if (h.R === H) continue;                                          // the active horse is updated by stepWorld
+    if (h.s.eatHay && h.s.eatHay.amount <= 0.02) h.s.eatHay = null;
+    autoEat(h);
+    const d = camera.position.distanceTo(h.R.root.position);
+    if (d > 90) continue;
+    updateRig(h.R, h.s, { target: 0, turnIn: 0, player: false, vol: clamp(1 - d / 14, 0, 1) * 0.7 }, dt, time);
+  }
+}
+
+// ---------------------------------------------------------------- you: riding, leading, or on foot
+const PERSON_SPEED = [-0.8, 0, 1.4, 3.6];          // back, stop, walk, run (m/s)
+const leading = () => !!player && player.horse && player.mode !== 'ride';
+function setPerson(i) {
+  personIdx = (i + PERSONS.length) % PERSONS.length;
+  const old = player, P = buildPerson(PERSONS[personIdx]);
+  if (old) {
+    Object.assign(P, { mode: old.mode, horse: old.horse, x: old.x, z: old.z, yaw: old.yaw, speed: old.speed, target: old.target });
+    old.group.parent && old.group.parent.remove(old.group);
+    old.mats.forEach(m => m.dispose());
+  }
+  player = P;
+  const R = P.horse ?? H;
+  if (P.mode === 'ride' || P.mode === 'toRide') seatPerson(P, R);
+  else if (P.mode === 'lead' || P.mode === 'toLead') standAtLead(P, R);
+  else if (P.mode === 'toTake') standAtLead(P, P.target.R);
+  else { P.horse = null; scene.add(P.group); placeFree(P); }
+  document.querySelectorAll('#personSel button').forEach((b, k) => b.classList.toggle('on', k === personIdx));
+  onModeChanged();
+}
+function placeFree(P) { P.group.position.set(P.x, groundH(P.x, P.z), P.z); P.group.rotation.set(0, P.yaw, 0); P.group.scale.setScalar(P.size); }
+// the horse whose head you're standing by (to take its lead)
+function nearbyHorse(P) {
+  let best = null, bd = 1e9;
+  for (const h of horses) {
+    const S = h.B.S, hx = h.s.x + Math.sin(h.s.yaw) * 0.6 * S, hz = h.s.z + Math.cos(h.s.yaw) * 0.6 * S;
+    const d = Math.hypot(P.x - hx, P.z - hz);
+    if (d < 1.2 * S + 0.9 && d < bd) { bd = d; best = h; }
+  }
+  return best;
+}
+// E: get off, get on, or take the lead of the horse you're next to
+function actionE() {
+  const P = player;
+  if (P.mode === 'free') {
+    const h = nearbyHorse(P);
+    if (!h) { toast('Walk up to a horse to take its lead', 'info'); return; }
+    takeLead(h);
+    return;
+  }
+  if (P.mode !== 'ride' && P.mode !== 'lead') return;
+  if (Math.abs(st.speed) > 0.3 || st.jump || st.rear || st.stun > 0) { toast(P.mode === 'ride' ? 'Halt first to get off' : 'Halt first to get on', 'info'); return; }
+  setGait(0);
+  if (P.mode === 'ride') H.root.attach(P.group);
+  P.mode = P.mode === 'ride' ? 'toLead' : 'toRide'; P.tr = 0;
+  onModeChanged();
+}
+// Q: let go of the lead and leave the horse where it stands
+function letGo() {
+  const P = player;
+  if (P.mode !== 'lead') { if (P.mode === 'ride') toast('Get off first (E), then let go (Q)', 'info'); return; }
+  if (Math.abs(st.speed) > 0.3) { toast('Halt first to let go', 'info'); return; }
+  P.group.getWorldPosition(_w1);
+  scene.attach(P.group);
+  P.x = _w1.x; P.z = _w1.z; P.yaw = st.yaw; P.speed = 0; P.horse = null; P.mode = 'free';
+  setGait(0); placeFree(P); onModeChanged();
+  toast(`You let go of ${horseOf(H).name}`, 'info');
+}
+function takeLead(h) {
+  const P = player;
+  P.mode = 'toTake'; P.tr = 0; P.target = h; P.from = new V3(P.x, 0, P.z); P.fromYaw = P.yaw;
+  h.s.eatHay = null; h.s.idle = 0; h.s.speed = 0;
+  H = h.R; st = h.s; breedIdx = h.i;
+  setGait(0); onBreedChanged(); onModeChanged();
+}
+// walking around on your own, or stepping up to a horse to take its lead
+function updatePerson(dt, time) {
+  const P = player;
+  if (P.mode === 'free') {
+    const tIn = ((keys.ArrowLeft || keys.a || keys.A) ? 1 : 0) - ((keys.ArrowRight || keys.d || keys.D) ? 1 : 0);
+    const target = PERSON_SPEED[clamp(gait, -1, 2) + 1];
+    P.speed = P.speed < target ? Math.min(target, P.speed + 4 * dt) : Math.max(target, P.speed - 6 * dt);
+    P.turn = damp(P.turn, tIn, 8, dt);
+    P.yaw += P.turn * (Math.abs(P.speed) > 2 ? 1.8 : 2.4) * dt;
+    P.x += Math.sin(P.yaw) * P.speed * dt; P.z += Math.cos(P.yaw) * P.speed * dt;
+    collidePerson(P);
+    placeFree(P);
+    poseStanding(P, P.speed, dt, null);
+    const near = nearbyHorse(P);
+    if (near !== P.near) { P.near = near; if (near) toast(`Press E to take ${near.name}'s lead`, 'info'); onModeChanged(); }
+  } else if (P.mode === 'toTake') {
+    // step round to the horse's left shoulder
+    const h = P.target;
+    P.tr = Math.min(1, P.tr + dt / 0.6);
+    leadSpot(h.R, P.size, _spot); h.R.root.updateMatrixWorld(true); _w1.copy(_spot); h.R.root.localToWorld(_w1);
+    const u = smooth(P.tr);
+    P.x = lerp(P.from.x, _w1.x, u); P.z = lerp(P.from.z, _w1.z, u);
+    let dy = h.s.yaw - P.fromYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); P.yaw = P.fromYaw + dy * u;
+    placeFree(P); poseStanding(P, 1.2 * (1 - u), dt, null);
+    if (P.tr >= 1) { standAtLead(P, h.R); P.near = null; onModeChanged(); toast(`Leading ${h.name} · E to get on`, 'info'); }
+  }
+}
+// on foot you can't walk through walls, trees, fences or horses
+function collidePerson(P) {
+  const r = 0.25 * P.size;
+  for (const c of colliders) {
+    if (c.h !== Infinity && c.type !== 'rock') continue;
+    const dx = P.x - c.x, dz = P.z - c.z, d = Math.hypot(dx, dz), min = c.r + r;
+    if (d < min && d > 1e-4) { P.x += dx / d * (min - d); P.z += dz / d * (min - d); }
+  }
+  for (const w of walls) {
+    const qx = clamp(P.x, w.minX, w.maxX), qz = clamp(P.z, w.minZ, w.maxZ), dx = P.x - qx, dz = P.z - qz, d = Math.hypot(dx, dz);
+    if (d < r && d > 1e-4) { P.x += dx / d * (r - d); P.z += dz / d * (r - d); }
+  }
+  for (const f of fences) {
+    if (f.h < 0.05) continue;
+    const dx = P.x - f.x, dz = P.z - f.z, lx = dx * f.ax.x + dz * f.ax.z, lz = dx * f.az.x + dz * f.az.z;
+    if (Math.abs(lx) < f.L && Math.abs(lz) < f.D + r) { const sg = lz >= 0 ? 1 : -1, pen = f.D + r - Math.abs(lz); P.x += f.az.x * sg * pen; P.z += f.az.z * sg * pen; }
+  }
+}
+// switch straight to another horse (the mount buttons, 1–5): the one you were with goes back to its box
+function switchToHorse(i) {
+  const h = horses[i], P = player;
+  if (P.horse === h.R) return;
+  const prev = P.horse ? horseOf(P.horse) : null;
+  let x, z, yaw;
+  if (prev) { x = prev.s.x; z = prev.s.z; yaw = prev.s.yaw; sendHome(prev); }
+  else {
+    // stand the new horse so you're at its left shoulder
+    yaw = P.yaw; const lx = 0.32 * h.B.bodyW * h.B.S + 0.42 * P.size, lz = 0.95 * h.B.S;
+    x = P.x - (Math.cos(yaw) * lx + Math.sin(yaw) * lz); z = P.z - (-Math.sin(yaw) * lx + Math.cos(yaw) * lz);
+  }
+  Object.assign(h.s, { x, z, yaw, prevX: x, prevZ: z, speed: 0, jump: null, rear: null, stun: 0, rvx: 0, rvz: 0, eatHay: null, graze: 0, idle: 0 });
+  h.s.rootY = groundH(x, z);
+  H = h.R; st = h.s; breedIdx = i;
+  h.R.root.position.set(x, h.s.rootY, z); h.R.root.rotation.y = yaw; h.R.root.updateMatrixWorld(true);
+  if (P.mode === 'ride' || P.mode === 'toRide') seatPerson(P, H); else standAtLead(P, H);
+  setGait(0); onBreedChanged(); onModeChanged();
+}
+// buttons and labels for what you can do right now
+function onModeChanged() {
+  const P = player; if (!P) return;
+  const free = P.mode === 'free' || P.mode === 'toTake';
+  const m = document.getElementById('mountBtn'), lg = document.getElementById('letGoBtn');
+  if (P.mode === 'ride' || P.mode === 'toRide') { m.textContent = 'Get off'; m.title = 'Get off and lead your horse (E)'; }
+  else if (!free) { m.textContent = 'Get on'; m.title = 'Get back in the saddle (E)'; }
+  else { m.textContent = 'Take lead'; m.title = 'Take the lead of the horse you’re next to (E)'; }
+  m.disabled = free && !P.near;
+  lg.hidden = P.mode !== 'lead';
+  // on foot on your own, the gaits are your own pace
+  const labels = free ? ['Back', 'Stop', 'Walk', 'Run', ''] : ['Back', 'Halt', 'Walk', 'Trot', 'Gallop'];
+  hudG.forEach((el, k) => { el.textContent = labels[k]; el.hidden = !labels[k] || (k === 4 && onFoot()); });
+  if (gait > 2 && onFoot()) setGait(2);
+  if (P.mode === 'lead' && P.horse && P.prevMode === 'toLead') toast('Leading on foot · Q to let go', 'info');
+  P.prevMode = P.mode;
+}
+function playerControl() {
+  const tIn = ((keys.ArrowLeft || keys.a || keys.A) ? 1 : 0) - ((keys.ArrowRight || keys.d || keys.D) ? 1 : 0);
+  const busy = !player.horse || player.horse !== H || player.mode === 'toLead' || player.mode === 'toRide';   // a horse nobody's holding stands still
+  return { target: busy ? 0 : gaitSpeed(gait) * H.B.speed, turnIn: busy ? 0 : tIn, player: true, vol: 1, rearHeld: spaceHold.down };
+}
+// what the camera follows: you on foot, otherwise your horse
+function camFocus() {
+  const P = player;
+  if (P && (P.mode === 'free' || P.mode === 'toTake')) {
+    const g = groundH(P.x, P.z);
+    return { x: P.x, z: P.z, yaw: P.yaw, speed: P.speed, base: g, rootY: g, h: 1.25 * P.size, scale: 0.62 };
+  }
+  return { x: st.x, z: st.z, yaw: st.yaw, speed: st.speed, base: lerp(groundH(st.x, st.z), st.rootY, 0.6), rootY: st.rootY,
+    h: (1.25 - 0.3 * st.graze) * H.B.S * (0.6 + 0.4 * H.B.k), scale: 0.45 + 0.55 * H.B.S };
+}
+
+// your horse eats when you bring it to hay: walking up to a pile stops it, and it puts its head down
+function updatePlayerEating() {
+  const S = H.B.S, fx = Math.sin(st.yaw), fz = Math.cos(st.yaw);
+  const nx = st.x + fx * 1.35 * S, nz = st.z + fz * 1.35 * S;   // where the muzzle reaches with the head down
+  let best = null, bd = 1e9;
+  for (const h of haySpots) { if (h.amount <= 0.02) continue; const d = Math.hypot(h.x - nx, h.z - nz); if (d < h.reach && d < bd) { bd = d; best = h; } }
+  if (st.hayIgnore && (!best || best !== st.hayIgnore)) st.hayIgnore = null;
+  if (st.eatHay) {
+    if (gait !== 0 || Math.abs(st.speed) > 0.3 || st.eatHay.amount <= 0.02 || st.jump || st.stun > 0) { st.hayIgnore = st.eatHay; st.eatHay = null; }
+    return;
+  }
+  if (!best || best === st.hayIgnore || st.jump || st.rear || st.stun > 0) return;
+  if (gait === 1 && Math.abs(st.speed) < 2.2 * H.B.speed) setGait(0);        // a walking horse stops at the hay
+  if (gait === 0 && Math.abs(st.speed) < 0.3) { st.eatHay = best; toast(best.bale ? 'Pulling hay from the bale' : 'Munching hay', 'info'); }
+}
+
+// roofs fade away while you ride inside, so you can see in
+function updateBuildings(dt) {
+  const inR = (b, x, z) => x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ;
+  for (const r of roofs) {
+    const F = camFocus();
+    const target = inR(r.region, F.x, F.z) || inR(r.region, camera.position.x, camera.position.z) ? 0 : 1;
+    const m = r.mesh.material; m.opacity = damp(m.opacity, target, 6, dt);
+    r.mesh.visible = m.opacity > 0.02; m.depthWrite = m.opacity > 0.95; r.mesh.castShadow = m.opacity > 0.5;
+  }
+}
+
 function updateWorld(dt, time) {
+  updateHay(dt);
+  updateBuildings(dt);
   updateAutoWeather(dt);
   updateEnv(dt);
   rainFx.update(dt);
@@ -2607,33 +3220,39 @@ function updateWorld(dt, time) {
 })();
 
 // ---------------------------------------------------------------- loop
-st = newRigState();
+H = horses[0].R; st = horses[0].s; breedIdx = 0;
 setEnv(1, 0, true);
 document.getElementById('timeBtn').addEventListener('click', (e) => { setEnv(timeIdx + 1, wxIdx); e.currentTarget.blur(); });
 document.getElementById('wxBtn').addEventListener('click', (e) => { pickWeather(wxIdx + 1); e.currentTarget.blur(); });
 document.getElementById('courseBtn').addEventListener('click', (e) => { setCourse(courseIdx + 1); e.currentTarget.blur(); });
-document.getElementById('mountBtn').addEventListener('click', (e) => { toggleMount(); e.currentTarget.blur(); });
+document.getElementById('mountBtn').addEventListener('click', (e) => { actionE(); e.currentTarget.blur(); });
+document.getElementById('letGoBtn').addEventListener('click', (e) => { letGo(); e.currentTarget.blur(); });
+document.querySelectorAll('#personSel button').forEach((b) => b.addEventListener('click', (e) => { setPerson(+b.dataset.p); e.currentTarget.blur(); }));
 document.getElementById('wxAutoBtn').addEventListener('click', (e) => { setWeatherAuto(!wxAuto); e.currentTarget.blur(); });
 setWeatherAuto(true);
-setBreed(0);
+setPerson(0);
+onBreedChanged();
 updateScore();
 placeAtStart();
 st.rootY = groundH(st.x, st.z);
 function stepWorld(dt, time) {
   updateSpaceHold(dt);
+  if (player.horse) updatePlayerEating(); else autoEat(horseOf(H));
   updateRig(H, st, playerControl(), dt, time);
+  updatePerson(dt, time);
+  updateStableHorses(dt, time);
   updateWorld(dt, time);
   updateRails(dt);
   updateCamera(dt, time);
   dust.update(dt); splash.update(dt);
   prints.update(time, envCur.wet);
-  updateAmbientAudio(dt, Math.abs(st.speed), envCur.rain);
+  updateAmbientAudio(dt, Math.abs(camFocus().speed), envCur.rain);
 }
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const time = clock.elapsedTime;
   stepWorld(dt, time);
-  hudS.innerHTML = `${(Math.abs(st.speed) * 3.6).toFixed(0)}<small>km/h</small>`;
+  hudS.innerHTML = `${(Math.abs(camFocus().speed) * 3.6).toFixed(0)}<small>km/h</small>`;
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -2647,7 +3266,7 @@ addEventListener('resize', () => {
 
 // debug hooks
 let simT = 1000;
-window.__horse = { get st() { return st; }, toggleMount, spacePress, spaceRelease, setCourse, groundH, setEnv, get wx() { return { auto: wxAuto, timer: wxTimer, idx: wxIdx, rate: envRate }; }, setWeatherAuto, pickWeather, herd, birds, setGait, setBreed, startJump, fences, colliders, resetCourse, score, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) { simT += dt; stepWorld(dt, simT); } renderer.render(scene, camera); }, camera, scene, get H() { return H; }, setCam: (yawOff, pitch, dist) => { camYawOff = yawOff; camPitch = pitch; camDist = dist; lastDrag = 1e9; } };
+window.__horse = { get st() { return st; }, get player() { return player; }, horses, switchToHorse, actionE, letGo, setPerson, haySpots, walls, spacePress, spaceRelease, setCourse, groundH, setEnv, get wx() { return { auto: wxAuto, timer: wxTimer, idx: wxIdx, rate: envRate }; }, setWeatherAuto, pickWeather, herd, birds, setGait, startJump, fences, colliders, resetCourse, score, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) { simT += dt; stepWorld(dt, simT); } renderer.render(scene, camera); }, camera, scene, get H() { return H; }, setCam: (yawOff, pitch, dist) => { camYawOff = yawOff; camPitch = pitch; camDist = dist; lastDrag = 1e9; } };
 </script>
 </body>
 </html>
