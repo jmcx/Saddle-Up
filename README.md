@@ -25,6 +25,7 @@ Then go to http://localhost:8765.
 | ↑ / ↓ | Change gait: rein back, halt, walk, trot, gallop (↓ at a halt steps backwards) |
 | ← / → | Steer |
 | Space | Jump |
+| E | Get off and lead your horse on foot, or get back on (at a halt) |
 | 1–5 | Change mount |
 | T | Time of day: dawn, day, golden hour, dusk |
 | Y | Pick the weather: clear, cloudy, rain, fog (switches to manual weather) |
@@ -56,6 +57,14 @@ Smaller mounts take quicker, shorter strides and jump lower, so the ponies and t
 - Just a little low: a rail falls (or you rap a solid fence) and you get a fault, but you keep going.
 - Too early, too late or no jump at all: you crash or refuse, and the horse stops.
 - Knocked rails go back up a few seconds after you ride away.
+
+## Leading on foot
+
+Press E (or the Get off button) at a halt and your rider hops down and walks beside the horse's left shoulder, leading it by the reins in one hand, as you would in real life. The stirrups are run up so they don't swing about.
+
+- Steer and change pace as normal, but only up to a trot: the rider jogs alongside.
+- No jumping while you're on foot.
+- Press E again at a halt to get back in the saddle. Resetting the course or changing mount also puts you back on.
 
 ## Pony arena
 

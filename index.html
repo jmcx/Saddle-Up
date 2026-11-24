@@ -21,11 +21,13 @@
   .gaits span.on { background: #f1e3c8; color: #2a1d12; font-weight: 600; }
   #spd { margin-top: 10px; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
   #score { margin-top: 6px; font-size: 12.5px; }
-  #courseBtn {
-    display: block; margin-top: 8px; padding: 6px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 12.5px; color: #fff; text-align: left;
+  .hudrow { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  #courseBtn, #mountBtn {
+    display: block; padding: 6px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 12.5px; color: #fff; text-align: left;
     background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18);
   }
-  #courseBtn:hover { background: rgba(255,255,255,0.18); } #courseBtn:focus-visible { outline: 2px solid #f1e3c8; outline-offset: 2px; }
+  #courseBtn:hover, #mountBtn:hover { background: rgba(255,255,255,0.18); }
+  #courseBtn:focus-visible, #mountBtn:focus-visible { outline: 2px solid #f1e3c8; outline-offset: 2px; }
   #courseBtn b { font-weight: 600; }
   #score .good { color: #a9e08f; } #score .bad { color: #ffab9a; }
   #toast {
@@ -115,7 +117,7 @@
   <div class="gaits"><span data-g="-1">Back</span><span data-g="0">Halt</span><span data-g="1">Walk</span><span data-g="2">Trot</span><span data-g="3">Gallop</span></div>
   <div id="spd">0<small>km/h</small></div>
   <div id="score"></div>
-  <button id="courseBtn" title="Change course (C)">Course: <b>Show-jumping arena</b></button>
+  <div class="hudrow"><button id="courseBtn" title="Change course (C)">Course: <b>Show-jumping arena</b></button><button id="mountBtn" title="Get off and lead your horse on foot (E)">Get off</button></div>
 </div>
 <div id="toast"></div>
 <div id="env"><button id="timeBtn" title="Time of day (T)">Day</button><button id="wxBtn" title="Weather (Y)">Clear</button><button id="wxAutoBtn" aria-pressed="true">Auto weather</button></div>
@@ -124,10 +126,10 @@
   <div class="pad l"><button data-k="ArrowLeft" aria-label="Steer left">◀</button><button data-k="ArrowRight" aria-label="Steer right">▶</button></div>
   <div class="pad r"><div class="col"><button data-act="up" aria-label="Faster">▲</button><button data-act="down" aria-label="Slower">▼</button></div><button data-act="jump" class="jump">Jump</button></div>
 </div>
-<div id="start"><div><b>Saddle Up</b><em>Click or tap to ride</em><span>↑ ↓ gait · ← → steer · Space jump · 1–5 mount · C course · T time · Y weather · U auto weather</span></div></div>
+<div id="start"><div><b>Saddle Up</b><em>Click or tap to ride</em><span>↑ ↓ gait · ← → steer · Space jump · E get off · 1–5 mount · C course · T time · Y weather · U auto weather</span></div></div>
 <div id="help">
   <kbd>↑</kbd> <kbd>↓</kbd> change gait &nbsp;·&nbsp; <kbd>←</kbd> <kbd>→</kbd> steer<br>
-  <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>C</kbd> change course &nbsp;·&nbsp; <kbd>R</kbd> reset<br>
+  <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>E</kbd> get off / on &nbsp;·&nbsp; <kbd>C</kbd> course &nbsp;·&nbsp; <kbd>R</kbd> reset<br>
   <kbd>T</kbd> time of day &nbsp;·&nbsp; <kbd>Y</kbd> weather &nbsp;·&nbsp; <kbd>U</kbd> auto weather<br> drag to orbit &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; <kbd>M</kbd> sound on/off
 </div>
 
@@ -1274,13 +1276,15 @@ function buildTackAndRider(R, bodyGeo, headGeo, mats) {
   const handBase = new V3(0.085, (at(0.45).top + 0.17 - rider.position.y) / rs, (0.5 - rider.position.z) / rs);
   const leatherTop = (sx) => new V3(sx * (seat.w * 0.96) / rs, (seat.top - 0.04 - rider.position.y) / rs, (0.13 - rider.position.z) / rs);
 
-  R.rider = { group: rider, rs, pelvis, torso, neckM, headG, limbs, reins, bits, footX, kneeX, handBase, leatherTop, lean: 0, rise: 0, release: 0,
+  R.rider = { group: rider, rs, size: look.size, seatPos: rider.position.clone(), mode: 'ride', tr: 0, walk: 0,
+    pelvis, torso, neckM, headG, limbs, reins, bits, footX, kneeX, handBase, leatherTop, lean: 0, rise: 0, release: 0,
     L_TH, L_SH, L_UA, L_FA };
 }
 
 const _p0 = new V3(), _u = new V3(), _sh = new V3(), _hd = new V3(), _hand = new V3(), _el = new V3(), _hip = new V3(), _ft = new V3(), _kn = new V3(), _pole = new V3();
 const _w1 = new V3(), _w2 = new V3(), _wc = new V3();
-function updateRider(R, s, g, dt, time) {
+// in the saddle: rising trot, half-seat, folding over jumps
+function poseRiding(R, s, g, dt) {
   const r = R.rider, { ww, wt, wg, ph, jW, J } = g;
   // posture targets: rising trot, half-seat at the gallop, folding over jumps, a lurch when the horse stops dead
   let lean = 0.06 + wt * 0.12 + wg * 0.55;
@@ -1327,12 +1331,90 @@ function updateRider(R, s, g, dt, time) {
     l.leatherS.position.addVectors(top, bottom).multiplyScalar(0.5); l.leatherS.scale.y = top.distanceTo(bottom);
     _d.subVectors(top, bottom).normalize(); l.leatherS.quaternion.setFromUnitVectors(_Y, _d);
     l.iron.position.copy(bottom); l.iron.rotation.set(0, Math.PI / 2, 0);
+    l.leatherS.visible = l.iron.visible = true;
+  }
+
+}
+
+// on foot beside the horse's left shoulder, leading it by the reins
+function poseStanding(R, s, dt, time) {
+  const r = R.rider, vr = Math.abs(s.speed) / r.size, dir = Math.sign(s.speed) || 1;   // speed in rider units
+  const moving = clamp(vr / 0.4, 0, 1);
+  const f = 0.8 + 0.45 * Math.min(vr, 4);                                                // stride cycles per second
+  r.walk = (((r.walk + dir * f * dt * moving) % 1) + 1) % 1;
+  const L = clamp(vr * 0.5 / f, 0, 1.1) * moving;                                         // how far each foot travels
+  const run = clamp((vr - 2.2) / 1.5, 0, 1);
+  r.lean = damp(r.lean, 0.04 + 0.16 * run, 6, dt);
+  _p0.set(0, 0.93 - 0.03 * Math.abs(Math.sin(TAU * r.walk)) * moving - 0.06 * run, 0);
+  _u.set(0, Math.cos(r.lean), Math.sin(r.lean));
+  const side = _sh.set(1, 0, 0);
+  r.pelvis.position.copy(_p0).y += 0.02; r.pelvis.rotation.set(0, 0.08 * Math.sin(TAU * r.walk) * moving, 0);
+  placeSeg(r.torso, _w1.copy(_p0).addScaledVector(_u, 0.06), _w2.copy(_p0).addScaledVector(_u, 0.38));
+  const neckBase = _w1.copy(_p0).addScaledVector(_u, 0.47);
+  _hd.copy(neckBase).add(_w2.set(0, 0.11, 0.02));
+  placeSeg(r.neckM, neckBase, _w2.copy(neckBase).lerp(_hd, 0.6));
+  r.headG.position.copy(_hd); r.headG.rotation.set(-0.05, -0.3 * (1 - moving * 0.6), 0);   // keeps an eye on the horse
+  R.root.updateMatrixWorld(true);
+  // the hand nearest the horse holds the reins a little below the bit
+  r.bits[0].getWorldPosition(_w1); r.bits[1].getWorldPosition(_w2); _wc.addVectors(_w1, _w2).multiplyScalar(0.5);
+  r.group.worldToLocal(_wc);
+  for (const sx of [1, -1]) {
+    const l = r.limbs[sx];
+    const sh = _w1.copy(_p0).addScaledVector(_u, 0.41).addScaledVector(side, 0.17 * sx);
+    if (sx < 0) _hand.copy(_wc).add(_w2.set(0.16, -0.12, -0.22));
+    else _hand.copy(sh).add(_w2.set(0.05, -0.52, 0.04 - 0.16 * Math.sin(TAU * r.walk) * moving * (0.6 + run)));
+    _pole.set(sx * 0.4, -1, -0.5);
+    ik2(sh, _hand, r.L_UA, r.L_FA, _pole, _el);
+    placeSeg(l.ua, sh, _el); placeSeg(l.fa, _el, _hand); l.hand.position.copy(_hand);
+    // legs: a simple walking (or running) step cycle
+    const p = (r.walk + (sx > 0 ? 0 : 0.5)) % 1;
+    let fz, fy;
+    if (p < 0.5) { fz = (0.5 - p * 2) * L * 0.5; fy = 0; }
+    else { const u = (p - 0.5) * 2; fz = (-0.5 + smooth(u)) * L; fy = Math.sin(Math.PI * u) * (0.1 + 0.1 * run) * moving; }
+    _hip.copy(_p0).add(_w2.set(sx * 0.1, -0.02, 0));
+    _ft.set(sx * 0.11, 0.08 + fy, fz * dir);
+    _pole.set(0, 0, 1);
+    ik2(_hip, _ft, r.L_TH, r.L_SH, _pole, _kn);
+    placeSeg(l.th, _hip, _kn); placeSeg(l.sh, _kn, _ft);
+    l.foot.position.copy(_ft).add(_w2.set(0, -0.03, 0.06)); l.foot.rotation.set(fy * 2, 0, 0);
+    l.leatherS.visible = l.iron.visible = false;                                          // stirrups run up while leading
+  }
+}
+
+// where the rider stands when leading: by the horse's left shoulder, on the ground (horse-root units)
+function leadSpot(R, out) {
+  const B = R.B, S = B.S;
+  out.set(0.32 * B.bodyW + 0.42 * R.rider.size / S, 0, 0.95);
+  _w1.copy(out); R.root.localToWorld(_w1);
+  out.y = (groundH(_w1.x, _w1.z) - R.root.position.y) / S;
+  return out;
+}
+const _spot = new V3(), _seat = new V3();
+function updateRider(R, s, g, dt, time) {
+  const r = R.rider;
+  if (r.mode === 'ride') poseRiding(R, s, g, dt);
+  else if (r.mode === 'off') { r.group.position.copy(leadSpot(R, _spot)); poseStanding(R, s, dt, time); }
+  else {
+    // getting off or on: hop between the saddle and the ground
+    r.tr = Math.min(1, r.tr + dt / 0.9);
+    leadSpot(R, _spot);
+    R.body.updateMatrixWorld(true);
+    _seat.copy(r.seatPos); R.body.localToWorld(_seat); R.root.worldToLocal(_seat);
+    const off = r.mode === 'toOff', u = smooth(r.tr);
+    const a = off ? _seat : _spot, b = off ? _spot : _seat;
+    r.group.position.lerpVectors(a, b, u).y += Math.sin(Math.PI * r.tr) * 0.35 * r.size / R.B.S;
+    if (off ? r.tr < 0.45 : r.tr > 0.55) poseRiding(R, s, g, dt); else poseStanding(R, s, dt, time);
+    if (r.tr >= 1) {
+      if (off) r.mode = 'off';
+      else snapMount(R);
+      onMountChanged();
+    }
   }
 
   // reins: from each bit ring to the matching hand, with a little sag
   R.root.updateMatrixWorld(true);
   for (let k = 0; k < 2; k++) {
-    const sx = k === 0 ? 1 : -1;
+    const sx = r.mode === 'ride' ? (k === 0 ? 1 : -1) : -1;           // on foot, one hand holds both reins
     r.bits[k].getWorldPosition(_w1);
     r.limbs[sx].hand.getWorldPosition(_w2);
     const dist = _w1.distanceTo(_w2);
@@ -1608,12 +1690,40 @@ const keys = {};
 let gait = 0;
 const hudG = [...document.querySelectorAll('.gaits span')];
 const hudS = document.getElementById('spd');
-function setGait(g) { gait = clamp(g, -1, 3); hudG.forEach((el, i) => el.classList.toggle('on', i - 1 === gait)); }
+function setGait(g) { gait = clamp(g, -1, onFoot() ? 2 : 3); hudG.forEach((el, i) => el.classList.toggle('on', i - 1 === gait)); }
 const gaitSpeed = (g) => g < 0 ? -0.9 : GAIT_SPEED[g];
 function playerControl() {
   const tIn = ((keys.ArrowLeft || keys.a || keys.A) ? 1 : 0) - ((keys.ArrowRight || keys.d || keys.D) ? 1 : 0);
-  return { target: gaitSpeed(gait) * H.B.speed, turnIn: tIn, player: true, vol: 1, rearHeld: spaceHold.down };
+  const busy = H.rider && (H.rider.mode === 'toOff' || H.rider.mode === 'toOn');   // standing still while getting on or off
+  return { target: busy ? 0 : gaitSpeed(gait) * H.B.speed, turnIn: busy ? 0 : tIn, player: true, vol: 1, rearHeld: spaceHold.down };
 }
+// Getting off to lead the horse on foot, and back on again
+const onFoot = () => !!(H && H.rider && H.rider.mode !== 'ride');
+function snapMount(R) {
+  const r = R.rider;
+  R.body.attach(r.group);
+  r.group.position.copy(r.seatPos); r.group.quaternion.identity(); r.group.scale.setScalar(r.rs);
+  r.mode = 'ride';
+}
+function toggleMount() {
+  if (!H || !H.rider) return;
+  const r = H.rider;
+  if (r.mode === 'toOff' || r.mode === 'toOn') return;
+  if (Math.abs(st.speed) > 0.3 || st.jump || st.rear || st.stun > 0) { toast(r.mode === 'ride' ? 'Halt first to get off' : 'Halt first to get on', 'info'); return; }
+  setGait(0);
+  if (r.mode === 'ride') H.root.attach(r.group);
+  r.mode = r.mode === 'ride' ? 'toOff' : 'toOn'; r.tr = 0;
+  onMountChanged();
+}
+function onMountChanged() {
+  const b = document.getElementById('mountBtn'); if (!b || !H) return;
+  const m = H.rider ? H.rider.mode : 'ride';
+  b.textContent = m === 'ride' || m === 'toOn' ? 'Get off' : 'Get on';
+  b.title = (m === 'ride' || m === 'toOn' ? 'Get off and lead your horse on foot' : 'Get back in the saddle') + ' (E)';
+  if (m === 'off') toast('Leading on foot · walk or trot', 'info');
+  if (gait > 2 && onFoot()) setGait(2);
+}
+
 // Space: a tap jumps. Held at a standstill the horse rears and calls out; held while moving it just calls.
 const HOLD_T = 1.5;                                // seconds Space must be held before the horse rears or calls
 const spaceHold = { down: false, t: 0, standing: false, done: false };
@@ -1633,7 +1743,7 @@ function updateSpaceHold(dt) {
   spaceHold.t += dt;
   if (spaceHold.t < HOLD_T) return;
   spaceHold.done = true;
-  if (spaceHold.standing && !isMoving() && st.stun <= 0) { st.rear = { phase: 'up', t: 0 }; st.idle = 0; neigh(H.B, 1); }
+  if (spaceHold.standing && !isMoving() && st.stun <= 0 && !onFoot()) { st.rear = { phase: 'up', t: 0 }; st.idle = 0; neigh(H.B, 1); }
   else neigh(H.B, 0.9);
 }
 setGait(0);
@@ -1653,6 +1763,7 @@ const breedBtns = BREEDS.map((b, i) => {
 });
 function onBreedChanged() {
   breedBtns.forEach((el, i) => el.classList.toggle('on', i === breedIdx));
+  onMountChanged();
 }
 addEventListener('keydown', (e) => {
   const k = e.key;
@@ -1663,6 +1774,7 @@ addEventListener('keydown', (e) => {
     if ((k === 'ArrowUp' || k === 'w' || k === 'W') && st && st.stun <= 0) setGait(gait + 1);
     if (k === 'r' || k === 'R') resetCourse();
     if (k === 'c' || k === 'C') setCourse(courseIdx + 1);
+    if (k === 'e' || k === 'E') toggleMount();
     if (k === 't' || k === 'T') setEnv(timeIdx + 1, wxIdx);
     if (k === 'y' || k === 'Y') pickWeather(wxIdx + 1);
     if (k === 'u' || k === 'U') { setWeatherAuto(!wxAuto); toast(wxAuto ? 'Auto weather on' : 'Manual weather: press Y to choose', 'info'); }
@@ -1698,7 +1810,7 @@ let st; // the player's horse state (created once the terrain exists, see newRig
 const GRAV = 9.8, PREP_T = 0.2, LAND_T = 0.32;
 const jumpHeight = (B, v) => lerp(0.7, 1.15, clamp(v / B.speed / 9.5, 0, 1)) * B.S * (0.7 + 0.3 * B.k);
 function startJump() {
-  if (st.jump || st.rear || !H || st.stun > 0 || st.speed < -0.05) return;
+  if (st.jump || st.rear || !H || onFoot() || st.stun > 0 || st.speed < -0.05) return;
   const g = clamp(st.speed / H.B.speed / 9.5, 0, 1);            // 0 standing .. 1 full gallop
   st.jump = { state: 'prep', t: 0, y: 0, vy: 0, T: 1, h: jumpHeight(H.B, st.speed) };
 }
@@ -1844,6 +1956,7 @@ const COURSES = [
 let courseIdx = 0;
 function resetCourse(msg = 'Course reset') {
   fences.forEach(f => { resetFence(f); f.faultT = 99; f.side = 0; f.clipped = false; });
+  if (H && H.rider && H.rider.mode !== 'ride') { snapMount(H); onMountChanged(); }
   score.clears = score.faults = 0; updateScore();
   placeAtStart(); st.speed = 0; st.jump = null; st.rear = null; st.stun = 0; st.rvx = st.rvz = 0; st.rootY = groundH(st.x, st.z); setGait(0);
   toast(msg, 'info');
@@ -2171,7 +2284,7 @@ function jumpWindow(f, v) {
 }
 function updateStride() {
   let show = false;
-  if (H && st.stun <= 0 && st.speed > 1.5) {
+  if (H && st.stun <= 0 && st.speed > 1.5 && !onFoot()) {
     const fx = Math.sin(st.yaw), fz = Math.cos(st.yaw);
     let best = null, bestD = 1e9;
     for (const f of fences) {
@@ -2499,6 +2612,7 @@ setEnv(1, 0, true);
 document.getElementById('timeBtn').addEventListener('click', (e) => { setEnv(timeIdx + 1, wxIdx); e.currentTarget.blur(); });
 document.getElementById('wxBtn').addEventListener('click', (e) => { pickWeather(wxIdx + 1); e.currentTarget.blur(); });
 document.getElementById('courseBtn').addEventListener('click', (e) => { setCourse(courseIdx + 1); e.currentTarget.blur(); });
+document.getElementById('mountBtn').addEventListener('click', (e) => { toggleMount(); e.currentTarget.blur(); });
 document.getElementById('wxAutoBtn').addEventListener('click', (e) => { setWeatherAuto(!wxAuto); e.currentTarget.blur(); });
 setWeatherAuto(true);
 setBreed(0);
@@ -2533,7 +2647,7 @@ addEventListener('resize', () => {
 
 // debug hooks
 let simT = 1000;
-window.__horse = { get st() { return st; }, spacePress, spaceRelease, setCourse, groundH, setEnv, get wx() { return { auto: wxAuto, timer: wxTimer, idx: wxIdx, rate: envRate }; }, setWeatherAuto, pickWeather, herd, birds, setGait, setBreed, startJump, fences, colliders, resetCourse, score, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) { simT += dt; stepWorld(dt, simT); } renderer.render(scene, camera); }, camera, scene, get H() { return H; }, setCam: (yawOff, pitch, dist) => { camYawOff = yawOff; camPitch = pitch; camDist = dist; lastDrag = 1e9; } };
+window.__horse = { get st() { return st; }, toggleMount, spacePress, spaceRelease, setCourse, groundH, setEnv, get wx() { return { auto: wxAuto, timer: wxTimer, idx: wxIdx, rate: envRate }; }, setWeatherAuto, pickWeather, herd, birds, setGait, setBreed, startJump, fences, colliders, resetCourse, score, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) { simT += dt; stepWorld(dt, simT); } renderer.render(scene, camera); }, camera, scene, get H() { return H; }, setCam: (yawOff, pitch, dist) => { camYawOff = yawOff; camPitch = pitch; camDist = dist; lastDrag = 1e9; } };
 </script>
 </body>
 </html>
