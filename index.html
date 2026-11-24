@@ -58,6 +58,39 @@
   #breeds b { display: block; font-size: 13.5px; font-weight: 600; }
   #breeds small { display: block; font-size: 11px; opacity: .7; }
   @media (max-width: 1100px) { #breeds .title { display: none; } }
+  canvas { touch-action: none; }
+  #env { position: fixed; top: 16px; right: 16px; display: flex; gap: 6px; }
+  #env button {
+    font: inherit; font-size: 12.5px; font-weight: 600; color: #fff; cursor: pointer; padding: 8px 12px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.15); background: rgba(20,22,18,0.42); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  #env button:hover { background: rgba(20,22,18,0.62); }
+  #env button:focus-visible, #breeds button:focus-visible { outline: 2px solid #f1e3c8; outline-offset: 2px; }
+  @media (max-width: 1050px) { #env { top: 74px; } }
+  #stride { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); width: min(420px, calc(100vw - 32px)); opacity: 0; transition: opacity .2s; pointer-events: none; color: #fff; text-align: center; }
+  #stride.show { opacity: 1; } #stride.show.jumping { opacity: .45; }
+  #stride .lbl { font-size: 13px; font-weight: 600; margin-bottom: 6px; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  #stride .bar { position: relative; height: 12px; border-radius: 6px; background: rgba(20,22,18,0.5); border: 1px solid rgba(255,255,255,0.25); overflow: hidden; }
+  #stride .zone { position: absolute; top: 0; bottom: 0; background: rgba(120,200,110,0.5); }
+  #stride .mark { position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; background: #fff; box-shadow: 0 0 6px rgba(0,0,0,.6); }
+  #stride.go .zone { background: rgba(130,235,105,0.95); } #stride.go .lbl { color: #c4f7b2; }
+  @media (max-width: 1000px) { #stride { bottom: 150px; } }
+  #touch { display: none; }
+  body.touch #touch { display: block; } body.touch #help { display: none; }
+  #touch .pad { position: fixed; bottom: max(18px, env(safe-area-inset-bottom)); display: flex; gap: 12px; align-items: flex-end; }
+  #touch .pad.l { left: max(16px, env(safe-area-inset-left)); } #touch .pad.r { right: max(16px, env(safe-area-inset-right)); }
+  #touch button {
+    width: 64px; height: 64px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); background: rgba(20,22,18,0.45); color: #fff;
+    font: inherit; font-size: 22px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  #touch button.down { background: rgba(241,227,200,0.9); color: #2a1d12; }
+  #touch .jump { width: 84px; height: 84px; font-size: 15px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  body.touch #hud { left: max(12px, env(safe-area-inset-left)); bottom: auto; top: 74px; padding: 10px 12px; }
+  body.touch .gaits span:not(.on) { display: none; }
+  body.touch #spd { font-size: 20px; margin-top: 6px; }
+  #touch .col { display: flex; flex-direction: column; gap: 10px; }
+  body.touch #stride { bottom: 170px; } body.touch #env { top: 74px; }
+  body.touch #toast { top: 190px; }
   kbd { display: inline-block; min-width: 18px; text-align: center; padding: 0 5px; border-radius: 4px; background: rgba(255,255,255,0.18); font-family: inherit; font-size: 12px; }
 </style>
 <script type="importmap">
@@ -70,15 +103,22 @@
 <body>
 <div id="breeds"><div class="title">Mount<br><kbd>1</kbd>–<kbd>5</kbd></div></div>
 <div id="hud">
-  <div class="gaits"><span data-g="0">Halt</span><span data-g="1">Walk</span><span data-g="2">Trot</span><span data-g="3">Gallop</span></div>
+  <div class="gaits"><span data-g="-1">Back</span><span data-g="0">Halt</span><span data-g="1">Walk</span><span data-g="2">Trot</span><span data-g="3">Gallop</span></div>
   <div id="spd">0<small>km/h</small></div>
   <div id="score"></div>
 </div>
 <div id="toast"></div>
-<div id="start"><div><b>Saddle Up</b><em>Click to ride</em><span>↑ ↓ gait · ← → steer · Space jump · 1–5 change mount</span></div></div>
+<div id="env"><button id="timeBtn" title="Time of day (T)">Day</button><button id="wxBtn" title="Weather (Y)">Clear</button></div>
+<div id="stride" aria-hidden="true"><div class="lbl"></div><div class="bar"><div class="zone"></div><div class="mark"></div></div></div>
+<div id="touch">
+  <div class="pad l"><button data-k="ArrowLeft" aria-label="Steer left">◀</button><button data-k="ArrowRight" aria-label="Steer right">▶</button></div>
+  <div class="pad r"><div class="col"><button data-act="up" aria-label="Faster">▲</button><button data-act="down" aria-label="Slower">▼</button></div><button data-act="jump" class="jump">Jump</button></div>
+</div>
+<div id="start"><div><b>Saddle Up</b><em>Click or tap to ride</em><span>↑ ↓ gait · ← → steer · Space jump · 1–5 mount · T time · Y weather</span></div></div>
 <div id="help">
   <kbd>↑</kbd> <kbd>↓</kbd> change gait &nbsp;·&nbsp; <kbd>←</kbd> <kbd>→</kbd> steer<br>
-  <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>R</kbd> reset course<br> drag to orbit &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; <kbd>M</kbd> sound on/off
+  <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>R</kbd> reset course<br>
+  <kbd>T</kbd> time of day &nbsp;·&nbsp; <kbd>Y</kbd> weather<br> drag to orbit &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; <kbd>M</kbd> sound on/off
 </div>
 
 <script type="module">
@@ -94,8 +134,10 @@ const TAU = Math.PI * 2;
 function hash3(v) { const s = Math.sin(v.x * 127.1 + v.y * 311.7 + v.z * 74.7) * 43758.5453; return s - Math.floor(s); }
 
 // ---------------------------------------------------------------- renderer / scene
+// phones and tablets get fewer grass blades, a smaller shadow map and a lower pixel ratio
+const MOBILE = matchMedia('(pointer: coarse)').matches;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, MOBILE ? 1.5 : 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -115,7 +157,7 @@ const hemi = new THREE.HemisphereLight(0xcfe3ff, 0x5b6a3c, 1.1);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff1dd, 2.6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.setScalar(MOBILE ? 1024 : 2048);
 const sc = sun.shadow.camera; sc.left = -9; sc.right = 9; sc.top = 9; sc.bottom = -9; sc.near = 1; sc.far = 80;
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
@@ -138,6 +180,81 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), new THREE.Shad
 }));
 sky.frustumCulled = false;
 scene.add(sky);
+
+// ---------------------------------------------------------------- terrain
+// The show-jumping arena is an oval kept perfectly flat: centre (-30, 0), radii 30 (x) and 45 (z).
+const COURSE = { cx: -30, cz: 0, rx: 30, rz: 45 };
+const nearCourse = (x, z, m) => ((x - COURSE.cx) / (COURSE.rx + m)) ** 2 + ((z - COURSE.cz) / (COURSE.rz + m)) ** 2 < 1;
+const sstep = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+
+// cross-country route east of the arena (az = direction of travel)
+const XC_PLAN = [
+  { type: 'log', x: 26, z: 14, ang: 1.25, h: 0.6 },
+  { type: 'hedge', x: 44, z: 30, ang: 0.84, h: 0.8 },
+  { type: 'bank', x: 58, z: 50, ang: 0.6 },
+  { type: 'log', x: 70, z: 70, ang: 0.54, h: 0.6 },          // log into the water
+  { type: 'log', x: 82, z: 104, ang: 0.2, h: 0.7 },
+  { type: 'hedge', x: 66, z: 124, ang: -0.67, h: 0.85 },
+  { type: 'log', x: 40, z: 118, ang: -1.8, h: 0.75 },
+  { type: 'wall', x: 22, z: 92, ang: -2.54, h: 0.8 },
+  { type: 'log', x: 14, z: 62, ang: -2.88, h: 0.7 },
+];
+const BANK = { x: 58, z: 50, ang: 0.6, hx: 4.5, hz: 3.5, h: 0.7 };
+const POND = { x: 74.6, z: 77.5, r: 8.5, depth: 0.5, level: 0 };
+const MEADOW = { x: -105, z: 55, r: 24 };                    // where the loose horses graze
+// spots levelled out so jumps sit on flat ground: { x, z, r, h0 }
+const FLATS = [
+  ...XC_PLAN.map(p => ({ x: p.x, z: p.z, r: p.type === 'bank' ? 9 : 6 })),
+  { x: POND.x, z: POND.z, r: 13 },
+  { x: MEADOW.x, z: MEADOW.z, r: MEADOW.r },
+];
+BANK.ax = new V3(Math.cos(BANK.ang), 0, -Math.sin(BANK.ang)); BANK.az = new V3(Math.sin(BANK.ang), 0, Math.cos(BANK.ang));
+
+function hillsH(x, z) {
+  return 2.4 * Math.sin(x * 0.021 + 1.3) * Math.sin(z * 0.017 + 0.4) + 1.2 * Math.sin(x * 0.043 + z * 0.029 + 0.7) + 0.45 * Math.sin(x * 0.093 + 2.1) * Math.cos(z * 0.081 + 0.3);
+}
+function arenaMask(x, z) { return sstep(1.2, 1.9, Math.hypot((x - COURSE.cx) / COURSE.rx, (z - COURSE.cz) / COURSE.rz)); }
+// rolling ground + levelled spots + pond basin (no bank): what the ground mesh shows
+function baseH(x, z) {
+  let h = hillsH(x, z) * arenaMask(x, z);
+  for (const f of FLATS) h = lerp(h, f.h0, 1 - sstep(f.r, f.r * 2, Math.hypot(x - f.x, z - f.z)));
+  h -= POND.depth * (1 - sstep(POND.r - 3, POND.r, Math.hypot(x - POND.x, z - POND.z)));
+  return h;
+}
+function bankMask(x, z) {
+  const dx = x - BANK.x, dz = z - BANK.z;
+  const lx = Math.abs(dx * BANK.ax.x + dz * BANK.ax.z), lz = Math.abs(dx * BANK.az.x + dz * BANK.az.z);
+  return (1 - sstep(BANK.hx, BANK.hx + 0.25, lx)) * (1 - sstep(BANK.hz, BANK.hz + 0.25, lz));
+}
+// the ground the horse stands on (includes the raised bank)
+function groundH(x, z) { return baseH(x, z) + BANK.h * bankMask(x, z); }
+function inWater(x, z) { return Math.hypot(x - POND.x, z - POND.z) < POND.r - 1.2; }
+// level each flat spot at whatever height the ground had there before it
+FLATS.forEach((f, i) => {
+  let h = hillsH(f.x, f.z) * arenaMask(f.x, f.z);
+  for (let j = 0; j < i; j++) { const g = FLATS[j]; h = lerp(h, g.h0, 1 - sstep(g.r, g.r * 2, Math.hypot(f.x - g.x, f.z - g.z))); }
+  f.h0 = h;
+});
+POND.level = FLATS.find(f => f.x === POND.x).h0 - 0.1;
+
+// the same height function in GLSL, for the grass blades
+const TERRAIN_GLSL = (() => {
+  const n = (v) => (+v).toFixed(5);
+  let s = `
+    float hillsH(vec2 p){ return 2.4*sin(p.x*0.021+1.3)*sin(p.y*0.017+0.4) + 1.2*sin(p.x*0.043+p.y*0.029+0.7) + 0.45*sin(p.x*0.093+2.1)*cos(p.y*0.081+0.3); }
+    float terrainH(vec2 p){
+      float h = hillsH(p) * smoothstep(1.2, 1.9, length(vec2((p.x - (${n(COURSE.cx)})) / ${n(COURSE.rx)}, (p.y - (${n(COURSE.cz)})) / ${n(COURSE.rz)})));`;
+  for (const f of FLATS) s += `\n      h = mix(h, ${n(f.h0)}, 1.0 - smoothstep(${n(f.r)}, ${n(f.r * 2)}, length(p - vec2(${n(f.x)}, ${n(f.z)}))));`;
+  s += `
+      h -= ${n(POND.depth)} * (1.0 - smoothstep(${n(POND.r - 3)}, ${n(POND.r)}, length(p - vec2(${n(POND.x)}, ${n(POND.z)}))));
+      vec2 bd = p - vec2(${n(BANK.x)}, ${n(BANK.z)});
+      float blx = abs(dot(bd, vec2(${n(BANK.ax.x)}, ${n(BANK.ax.z)}))), blz = abs(dot(bd, vec2(${n(BANK.az.x)}, ${n(BANK.az.z)})));
+      h += ${n(BANK.h)} * (1.0 - smoothstep(${n(BANK.hx)}, ${n(BANK.hx + 0.25)}, blx)) * (1.0 - smoothstep(${n(BANK.hz)}, ${n(BANK.hz + 0.25)}, blz));
+      return h;
+    }
+    float pondFade(vec2 p){ return smoothstep(${n(POND.r - 1.5)}, ${n(POND.r + 0.3)}, length(p - vec2(${n(POND.x)}, ${n(POND.z)}))); }`;
+  return s;
+})();
 
 // ---------------------------------------------------------------- ground
 function grassTexture() {
@@ -166,7 +283,8 @@ function grassTexture() {
   t.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return t;
 }
-const gTex = grassTexture(); gTex.repeat.set(400, 400);
+const GROUND_SIZE = 1600, GROUND_SEG = 640;
+const gTex = grassTexture(); gTex.repeat.set(GROUND_SIZE / 6, GROUND_SIZE / 6);
 const groundMat = new THREE.MeshStandardMaterial({ map: gTex, roughness: 1, metalness: 0 });
 groundMat.onBeforeCompile = (sh) => {
   sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `
@@ -175,12 +293,19 @@ groundMat.onBeforeCompile = (sh) => {
     vec4 t3 = texture2D(map, vMapUv * 0.019 + vec2(0.57, 0.13));
     diffuseColor.rgb *= t1.rgb * 0.5 + t2.rgb * 0.3 + t3.rgb * 0.2;`);
 };
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), groundMat);
-ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+const ground = (() => {
+  const g = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, GROUND_SEG, GROUND_SEG);
+  g.rotateX(-Math.PI / 2);
+  const pa = g.attributes.position;
+  for (let i = 0; i < pa.count; i++) pa.setY(i, baseH(pa.getX(i), pa.getZ(i)));
+  g.computeVertexNormals();
+  return new THREE.Mesh(g, groundMat);
+})();
+ground.receiveShadow = true;
 scene.add(ground);
 
 // ---------------------------------------------------------------- infinite grass blades (wrapped around a moving centre)
-const GRASS_R = 70, GRASS_N = 220000;
+const GRASS_R = 70, GRASS_N = MOBILE ? 80000 : 220000;
 const grass = (() => {
   const base = new THREE.BufferGeometry();
   const p = [];
@@ -210,16 +335,17 @@ const grass = (() => {
       uCenter: { value: new V3() }, uR: { value: GRASS_R }, uTime: { value: 0 },
       uBase: { value: new THREE.Color(0x2c4214) }, uTip: { value: new THREE.Color(0x8fa246) },
       fogColor: { value: FOG }, fogNear: { value: scene.fog.near }, fogFar: { value: scene.fog.far },
-      uHorse: { value: new V3() },
+      uHorse: { value: new V3() }, uLight: { value: new THREE.Color(1, 1, 1) },
     },
     vertexShader: `
       uniform vec3 uCenter, uHorse; uniform float uR, uTime;
       attribute vec2 aOffset, aScale; attribute float aRot, aVar;
+      ${TERRAIN_GLSL}
       varying float vH, vVar, vDepth;
       void main(){
         vec2 rel = mod(aOffset - uCenter.xz + uR * 0.5, uR) - uR * 0.5;
         vec2 wp = uCenter.xz + rel;
-        float fade = 1.0 - smoothstep(uR * 0.32, uR * 0.5, length(rel));
+        float fade = (1.0 - smoothstep(uR * 0.32, uR * 0.5, length(rel))) * pondFade(wp);
         float h = position.y;
         vec3 p = vec3(position.x * aScale.x, h * aScale.y * fade, 0.0);
         float c = cos(aRot), s = sin(aRot);
@@ -230,16 +356,16 @@ const grass = (() => {
         // flatten under the horse a little
         vec2 dh = wp - uHorse.xz; float near = 1.0 - smoothstep(0.0, 1.2, length(dh));
         p.y *= 1.0 - near * 0.6;
-        vec4 mv = viewMatrix * vec4(vec3(wp.x, 0.0, wp.y) + p, 1.0);
+        vec4 mv = viewMatrix * vec4(vec3(wp.x, terrainH(wp), wp.y) + p, 1.0);
         gl_Position = projectionMatrix * mv;
         vH = h; vVar = aVar; vDepth = -mv.z;
       }`,
     fragmentShader: `
-      uniform vec3 uBase, uTip, fogColor; uniform float fogNear, fogFar;
+      uniform vec3 uBase, uTip, fogColor, uLight; uniform float fogNear, fogFar;
       varying float vH, vVar, vDepth;
       void main(){
         vec3 col = mix(uBase, uTip, vH) * (0.75 + 0.5 * vVar);
-        col *= 0.55 + 0.6 * vH;
+        col *= (0.55 + 0.6 * vH) * uLight;
         col = mix(col, fogColor, smoothstep(fogNear, fogFar, vDepth));
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
@@ -254,9 +380,9 @@ const grass = (() => {
 // ---------------------------------------------------------------- trees & rocks
 // colliders: { type, x, z, r, h } — h is how high you must be to pass over it (Infinity = can't jump it)
 const colliders = [];
-// the jumping course is an oval: centre (-30, 0), radii 30 (x) and 45 (z); keep it clear of trees and rocks
-const COURSE = { cx: -30, cz: 0, rx: 30, rz: 45 };
-const nearCourse = (x, z, m) => ((x - COURSE.cx) / (COURSE.rx + m)) ** 2 + ((z - COURSE.cz) / (COURSE.rz + m)) ** 2 < 1;
+// keep trees and rocks off the arena, the cross-country route and the meadow
+const nearFeature = (x, z, m) => nearCourse(x, z, m) || XC_PLAN.some(p => Math.hypot(x - p.x, z - p.z) < 10 + m)
+  || Math.hypot(x - POND.x, z - POND.z) < POND.r + 6 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < MEADOW.r + 4 + m;
 (() => {
   const rnd = (a, b) => a + Math.random() * (b - a);
   const trunkGeo = new THREE.CylinderGeometry(0.16, 0.3, 4, 8).translate(0, 2, 0);
@@ -274,10 +400,10 @@ const nearCourse = (x, z, m) => ((x - COURSE.cx) / (COURSE.rx + m)) ** 2 + ((z -
   const crowns = new THREE.InstancedMesh(crownGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }), N);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new V3(), p = new V3(), c = new THREE.Color();
   for (let i = 0; i < N; i++) {
-    let x, z; do { x = rnd(-650, 650); z = rnd(-650, 650); } while (Math.hypot(x, z) < 25 || nearCourse(x, z, 14));
-    const k = rnd(0.7, 1.6);
-    colliders.push({ type: 'tree', x, z, r: 0.32 * k, h: Infinity });
-    p.set(x, 0, z); q.setFromAxisAngle(new V3(0, 1, 0), rnd(0, TAU)); s.set(k, k * rnd(0.85, 1.25), k);
+    let x, z; do { x = rnd(-650, 650); z = rnd(-650, 650); } while (Math.hypot(x, z) < 25 || nearFeature(x, z, 14));
+    const k = rnd(0.7, 1.6), y = baseH(x, z);
+    colliders.push({ type: 'tree', x, z, y, r: 0.32 * k, h: Infinity });
+    p.set(x, y - 0.15, z); q.setFromAxisAngle(new V3(0, 1, 0), rnd(0, TAU)); s.set(k, k * rnd(0.85, 1.25), k);
     m.compose(p, q, s); trunks.setMatrixAt(i, m); crowns.setMatrixAt(i, m);
     c.setHSL(rnd(0.2, 0.3), rnd(0.35, 0.55), rnd(0.18, 0.28)); crowns.setColorAt(i, c);
   }
@@ -290,10 +416,10 @@ const nearCourse = (x, z, m) => ((x - COURSE.cx) / (COURSE.rx + m)) ** 2 + ((z -
   const R = 360;
   const rocks = new THREE.InstancedMesh(rockGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), R);
   for (let i = 0; i < R; i++) {
-    let x, z; do { x = rnd(-500, 500); z = rnd(-500, 500); } while (Math.hypot(x, z) < 8 || nearCourse(x, z, 6));
-    const k = Math.pow(Math.random(), 3) * 1.6 + 0.15;
-    p.set(x, -k * 0.15, z); q.setFromEuler(new THREE.Euler(rnd(-0.2, 0.2), rnd(0, TAU), rnd(-0.2, 0.2))); s.set(k * rnd(0.8, 1.4), k, k * rnd(0.8, 1.4));
-    if (k * 0.5 > 0.2) colliders.push({ type: 'rock', x, z, r: 0.9 * k * (s.x + s.z) / (2 * k), h: k * 0.5 });
+    let x, z; do { x = rnd(-500, 500); z = rnd(-500, 500); } while (Math.hypot(x, z) < 8 || nearFeature(x, z, 2));
+    const k = Math.pow(Math.random(), 3) * 1.6 + 0.15, y = baseH(x, z);
+    p.set(x, y - k * 0.15, z); q.setFromEuler(new THREE.Euler(rnd(-0.2, 0.2), rnd(0, TAU), rnd(-0.2, 0.2))); s.set(k * rnd(0.8, 1.4), k, k * rnd(0.8, 1.4));
+    if (k * 0.5 > 0.2) colliders.push({ type: 'rock', x, z, y, r: 0.9 * k * (s.x + s.z) / (2 * k), h: k * 0.5 });
     m.compose(p, q, s); rocks.setMatrixAt(i, m);
     c.setHSL(0.08, 0.05, rnd(0.33, 0.5)); rocks.setColorAt(i, c);
   }
@@ -302,6 +428,7 @@ const nearCourse = (x, z, m) => ((x - COURSE.cx) / (COURSE.rx + m)) ** 2 + ((z -
 
 // ---------------------------------------------------------------- jumping course
 const fences = [];
+const trackMat = new THREE.MeshStandardMaterial({ color: 0x9c8462, roughness: 1, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide });
 const looseRails = [];
 (() => {
   const canvasTex = (w, h, draw, rep) => {
@@ -329,7 +456,7 @@ const looseRails = [];
   const hedgeMat = new THREE.MeshStandardMaterial({ color: 0x3d5e25, roughness: 1 });
   const numberMat = (n) => new THREE.MeshStandardMaterial({ roughness: 0.7, map: canvasTex(128, 128, (g, w, h) => {
     g.fillStyle = '#f7f4ec'; g.fillRect(0, 0, w, h); g.strokeStyle = '#222'; g.lineWidth = 8; g.strokeRect(4, 4, w - 8, h - 8);
-    g.fillStyle = '#1a1a1a'; g.font = 'bold 78px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n), w / 2, h / 2 + 4);
+    g.fillStyle = '#1a1a1a'; g.font = `bold ${String(n).length > 2 ? 50 : 78}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n), w / 2, h / 2 + 4);
   }) });
   const shadow = (m) => { m.castShadow = true; m.receiveShadow = true; return m; };
 
@@ -339,14 +466,19 @@ const looseRails = [];
   const wingGeo = new THREE.BoxGeometry(0.55, 1.25, 0.05).translate(0, 0.625, 0);
   const cupGeo = new THREE.BoxGeometry(0.06, 0.05, 0.12);
 
+  const flagPole = new THREE.CylinderGeometry(0.02, 0.025, 1.7, 6).translate(0, 0.85, 0);
+  const flagGeo = (() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 1.68, 0, 0, 1.36, 0, 0.42, 1.52, 0], 3)); g.computeVertexNormals(); return g; })();
+  const flagMats = [new THREE.MeshStandardMaterial({ color: 0xd32b2b, side: THREE.DoubleSide, roughness: 0.8 }), new THREE.MeshStandardMaterial({ color: 0xf4f1ea, side: THREE.DoubleSide, roughness: 0.8 })];
+
   function addFence(def, index) {
     const { type, x, z, ang, h } = def;
     const scheme = index % SCHEMES.length;
-    const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ang; scene.add(g);
+    const y0 = groundH(x, z);
+    const g = new THREE.Group(); g.position.set(x, y0, z); g.rotation.y = ang; scene.add(g);
     const f = {
-      type, x, z, ang, L: RAIL_HALF, D: 0.12, h: 0, base: h, rails: [], solid: false, group: g,
+      type, x, z, y: y0, ang, L: RAIL_HALF, D: 0.12, h: 0, base: h, rails: [], solid: false, group: g,
       ax: new V3(Math.cos(ang), 0, -Math.sin(ang)), az: new V3(Math.sin(ang), 0, Math.cos(ang)),
-      side: 0, faultT: 99, downT: 0, clipped: false, num: index + 1,
+      side: 0, faultT: 99, downT: 0, clipped: false, num: def.label ?? index + 1, xc: !!def.xc,
     };
     const toWorld = (lx, lz) => ({ x: x + f.ax.x * lx + f.az.x * lz, z: z + f.ax.z * lx + f.az.z * lz });
     const standards = (zs) => {
@@ -398,8 +530,16 @@ const looseRails = [];
       const box = shadow(new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.22, 0.85), white)); box.position.y = 0.11; g.add(box);
       f.L = 1.8;
     }
+    if (f.xc) {
+      // cross-country flags: red on the rider's right, white on the left
+      for (const [sx, mat] of [[-1, flagMats[0]], [1, flagMats[1]]]) {
+        const pole = shadow(new THREE.Mesh(flagPole, white)); pole.position.set(sx * (f.L + 0.55), 0, 0); g.add(pole);
+        const flag = new THREE.Mesh(flagGeo, mat); flag.position.copy(pole.position); flag.rotation.y = sx > 0 ? Math.PI : 0; flag.castShadow = true; g.add(flag);
+        const w = toWorld(sx * (f.L + 0.55), 0); colliders.push({ type: 'wing', x: w.x, z: w.z, y: y0, r: 0.2, h: Infinity });
+      }
+    }
     // number board on the right-hand standard, facing the approach
-    const board = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.32), numberMat(index + 1));
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.32), numberMat(f.num));
     board.position.set(-(RAIL_HALF + 0.45), 1.45, -0.05 - (f.type === 'oxer' ? 0.45 : f.D)); board.rotation.y = Math.PI; g.add(board);
     if (f.type === 'wall' || f.type === 'log' || f.type === 'hedge') {
       const post = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.3, 0.06), white)); post.position.set(-(RAIL_HALF + 0.45), 0.65, -f.D - 0.02); g.add(post);
@@ -419,6 +559,45 @@ const looseRails = [];
     const tx = -COURSE.rx * Math.sin(th), tz = COURSE.rz * Math.cos(th);
     addFence({ type, x, z, h, ang: Math.atan2(tx, tz) }, i);
   });
+  // cross-country fences
+  let xcN = 0;
+  XC_PLAN.forEach((p, i) => { if (p.type !== 'bank') addFence({ ...p, xc: true, label: 'XC' + (++xcN) }, i + 2); else xcN++; });
+
+  // table bank: jump up, ride across, drop off the far side
+  {
+    const top = new THREE.MeshStandardMaterial({ map: gTex.clone(), roughness: 1 }); top.map.repeat.set(1.5, 1.2); top.map.needsUpdate = true;
+    const side = new THREE.MeshStandardMaterial({ color: 0x6e5a3c, roughness: 1 });
+    const y0 = FLATS.find(f => f.x === BANK.x).h0;
+    const b = shadow(new THREE.Mesh(new THREE.BoxGeometry(BANK.hx * 2 + 0.2, BANK.h + 0.4, BANK.hz * 2 + 0.2), [side, side, top, side, side, side]));
+    b.position.set(BANK.x, y0 + (BANK.h - 0.4) / 2, BANK.z); b.rotation.y = BANK.ang; scene.add(b);
+    const lip = shadow(new THREE.Mesh(new THREE.BoxGeometry(BANK.hx * 2 + 0.3, 0.12, 0.25), new THREE.MeshStandardMaterial({ color: 0x5a4532, roughness: 0.95 })));
+    for (const sz of [-1, 1]) { const l = lip.clone(); l.position.set(BANK.x + BANK.az.x * sz * (BANK.hz + 0.05), y0 + BANK.h - 0.04, BANK.z + BANK.az.z * sz * (BANK.hz + 0.05)); l.rotation.y = BANK.ang; scene.add(l); }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const c = BANK.ax.clone().multiplyScalar(sx * (BANK.hx + 0.6)).add(BANK.az.clone().multiplyScalar(sz * BANK.hz));
+      const pole = shadow(new THREE.Mesh(flagPole, white)); pole.position.set(BANK.x + c.x, groundH(BANK.x + c.x, BANK.z + c.z), BANK.z + c.z); scene.add(pole);
+      const flag = new THREE.Mesh(flagGeo, flagMats[sx < 0 ? 0 : 1]); flag.position.copy(pole.position); flag.rotation.y = BANK.ang + (sx > 0 ? Math.PI : 0); scene.add(flag);
+    }
+  }
+
+  // pond with reeds
+  {
+    const water = new THREE.Mesh(new THREE.CircleGeometry(POND.r - 0.3, 64), new THREE.MeshStandardMaterial({ color: 0x3e6a76, roughness: 0.08, metalness: 0.25, transparent: true, opacity: 0.82 }));
+    water.rotation.x = -Math.PI / 2; water.position.set(POND.x, POND.level, POND.z); water.receiveShadow = true; scene.add(water);
+    const reedGeo = new THREE.ConeGeometry(0.02, 1, 4).translate(0, 0.5, 0);
+    const reeds = new THREE.InstancedMesh(reedGeo, new THREE.MeshStandardMaterial({ color: 0x6f7d3a, roughness: 0.9 }), 160);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+    let n = 0;
+    for (let i = 0; i < 160; i++) {
+      const a = Math.random() * TAU;
+      const gap = (b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+      if (gap(Math.atan2(70 - POND.x, 70 - POND.z)) < 0.5 || gap(Math.atan2(82 - POND.x, 104 - POND.z)) < 0.5) continue; // keep the way in and out clear
+      const r = POND.r - 0.8 + Math.random() * 1.6, x = POND.x + Math.sin(a) * r, z = POND.z + Math.cos(a) * r;
+      e.set((Math.random() - 0.5) * 0.25, 0, (Math.random() - 0.5) * 0.25); q.setFromEuler(e);
+      m.compose(new V3(x, Math.max(baseH(x, z), POND.level - 0.2), z), q, new V3(1, 0.6 + Math.random() * 0.9, 1));
+      reeds.setMatrixAt(n++, m);
+    }
+    reeds.count = n; reeds.castShadow = true; scene.add(reeds);
+  }
 
   // sandy track ribbon around the oval
   const pos = [], idx = [], W = 3.2, SEG = 240;
@@ -430,7 +609,7 @@ const looseRails = [];
     if (i < SEG) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
   }
   const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); tg.setIndex(idx); tg.computeVertexNormals();
-  const track = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ color: 0x9c8462, roughness: 1, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide }));
+  const track = new THREE.Mesh(tg, trackMat);
   track.receiveShadow = true; scene.add(track);
 })();
 
@@ -622,7 +801,7 @@ const BLAZES = {
 
 function mkMat(o) { return new THREE.MeshPhysicalMaterial(o); }
 
-function buildHorse(B) {
+function buildHorse(B, opts = {}) {
   const k = B.k, kw = B.kw;
   const COAT_D = new THREE.Color(B.coat).multiplyScalar(0.72);
   const POINTS = B.points;
@@ -651,7 +830,7 @@ function buildHorse(B) {
   horse.add(body);
 
   const BW = B.bodyW, BH = B.bodyH;
-  body.add(mk(loft([
+  const bodyGeo = loft([
     { p: [0, 1.30, -1.0], w: 0.03, h: 0.03 },
     { p: [0, 1.31, -0.96], w: 0.13, ht: 0.14, hb: 0.18 },
     { p: [0, 1.31, -0.90], w: 0.21, ht: 0.22, hb: 0.29 },
@@ -664,7 +843,8 @@ function buildHorse(B) {
     { p: [0, 1.24, 0.62], w: 0.23, ht: 0.28, hb: 0.33 },
     { p: [0, 1.22, 0.80], w: 0.17, ht: 0.18, hb: 0.24 },
     { p: [0, 1.22, 0.88], w: 0.04, h: 0.05 },
-  ].map(s => ({ ...s, w: s.w * BW, ht: (s.ht ?? s.h) * BH, hb: (s.hb ?? s.h) * BH })), { radial: 40, steps: 12, color: B.coat, colorFn: cf('body', new V3()) })));
+  ].map(s => ({ ...s, w: s.w * BW, ht: (s.ht ?? s.h) * BH, hb: (s.hb ?? s.h) * BH })), { radial: 40, steps: 12, color: B.coat, colorFn: cf('body', new V3()) });
+  body.add(mk(bodyGeo));
 
   // neck
   const neck = new THREE.Group();
@@ -699,7 +879,7 @@ function buildHorse(B) {
       if (sa < -0.3 && t < 0.35) out.lerp(_light, 0.5 * smooth(clamp((-sa - 0.3) / 0.4, 0, 1)));
     }
   };
-  head.add(mk(loft([
+  const headGeo = loft([
     { p: [0, 0.0, -0.10], w: 0.06, h: 0.06 },
     { p: [0, 0.0, -0.01], w: 0.10, ht: 0.08, hb: 0.12 },
     { p: [0, -0.01, 0.10], w: 0.105, ht: 0.085, hb: 0.15 },
@@ -708,7 +888,8 @@ function buildHorse(B) {
     { p: [0, -0.01, 0.50], w: 0.07, ht: 0.06, hb: 0.07, c: B.muzzle },
     { p: [0, -0.02, 0.58], w: 0.062, ht: 0.05, hb: 0.06, c: B.muzzle },
     { p: [0, -0.025, 0.62], w: 0.02, h: 0.02, c: B.muzzle },
-  ].map(s => ({ ...s, p: [s.p[0], s.p[1], s.p[2] * HL] })), { radial: 32, color: B.coat, colorFn: cf('head', headOrigin, headExtra) })));
+  ].map(s => ({ ...s, p: [s.p[0], s.p[1], s.p[2] * HL] })), { radial: 32, color: B.coat, colorFn: cf('head', headOrigin, headExtra) });
+  head.add(mk(headGeo));
   for (const sx of [1, -1]) {
     const eye = mk(new THREE.SphereGeometry(0.022, 16, 12), eyeMat);
     eye.scale.set(0.8, 1, 1.15); eye.position.set(sx * 0.085, eyeY, eyeZ); head.add(eye);
@@ -917,7 +1098,9 @@ function buildHorse(B) {
   }
   const legs = [buildLeg(true, true, B.socks[0]), buildLeg(true, false, B.socks[1]), buildLeg(false, true, B.socks[2]), buildLeg(false, false, B.socks[3])]; // LF RF LH RH
 
-  return { B, root: horse, body, neck, head, ears, tailSegs, legs, mats, lift: 1.30 * (k - 1) };
+  const R = { B, root: horse, body, neck, head, ears, tailSegs, legs, mats, lift: 1.30 * (k - 1), extras: [] };
+  if (opts.rider !== false) buildTackAndRider(R, bodyGeo, headGeo, mats);
+  return R;
 }
 
 const TAIL_REST = [1.9, -0.5, -0.4, -0.3, -0.2, -0.12, -0.08, -0.05];
@@ -934,12 +1117,207 @@ function setBreed(i) {
   breedIdx = (i + BREEDS.length) % BREEDS.length;
   if (H) {
     scene.remove(H.root);
+    H.extras.forEach(o => scene.remove(o));
     H.root.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     H.mats.forEach(m => m.dispose());
   }
   H = buildHorse(BREEDS[breedIdx]);
   scene.add(H.root);
   if (typeof onBreedChanged === 'function') onBreedChanged();
+}
+
+// ---------------------------------------------------------------- rider and tack
+// A thin shell that hugs part of a lofted surface (saddle pad, saddle, girth, bridle straps).
+// z0..z1 picks the stretch along the loft (by its local z), a0..a1 the arc around it (π/2 = top).
+function shellPatch(geo, z0, z1, a0, a1, off, { rows = 14, cols = 16, color = 0x000000, axis = 'z' } = {}) {
+  const { P, D } = geo.userData;
+  const table = []; const p = new V3();
+  for (let i = 0; i <= 400; i++) { P.getPoint(i / 400, p); table.push([i / 400, p[axis]]); }
+  const tAt = (z) => { let best = 0, bd = 1e9; for (const [t, v] of table) { const d = Math.abs(v - z); if (d < bd) { bd = d; best = t; } } return best; };
+  const pos = [], idx = [];
+  const side = new V3(1, 0, 0), d = new V3(), tan = new V3(), nrm = new V3(), v = new V3();
+  for (let i = 0; i <= rows; i++) {
+    const zn = i / rows, t = tAt(lerp(z0, z1, zn));
+    P.getPoint(t, p); D.getPoint(t, d); P.getTangent(t, tan); tan.x = 0; tan.normalize(); nrm.crossVectors(tan, side).normalize();
+    for (let j = 0; j <= cols; j++) {
+      const an = j / cols, a = lerp(a0, a1, an), ca = Math.cos(a), sa = Math.sin(a);
+      const o = typeof off === 'function' ? off(zn, an) : off;
+      v.copy(p).addScaledVector(side, (d.x + o) * ca).addScaledVector(nrm, ((sa >= 0 ? d.y : d.z) + o) * sa);
+      pos.push(v.x, v.y, v.z);
+      if (i < rows && j < cols) { const q = i * (cols + 1) + j; idx.push(q, q + 1, q + cols + 1, q + 1, q + cols + 2, q + cols + 1); }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.6, side: THREE.DoubleSide }));
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
+const RIDER_LOOK = {
+  Thoroughbred: { size: 1.0, jacket: 0x1e2b4a },
+  Friesian: { size: 1.0, jacket: 0x23402f },
+  'Welsh Pony': { size: 0.82, jacket: 0x9c2730 },
+  'Shetland Pony': { size: 0.64, jacket: 0x3b77c4 },
+  Donkey: { size: 0.84, jacket: 0x6d5b3f },
+};
+const _Y = new V3(0, 1, 0), _d = new V3(), _a = new V3(), _b = new V3(), _c = new V3();
+function placeSeg(mesh, a, b) { mesh.position.addVectors(a, b).multiplyScalar(0.5); _d.subVectors(b, a).normalize(); mesh.quaternion.setFromUnitVectors(_Y, _d); }
+// two-bone IK in 3D: joint position for bones l1, l2 from root a to target t, bending towards pole
+function ik2(a, t, l1, l2, pole, out) {
+  _a.subVectors(t, a); const d0 = _a.length(); const dir = _a.divideScalar(d0 || 1);
+  const d = clamp(d0, Math.abs(l1 - l2) + 1e-3, (l1 + l2) * 0.999);
+  t.copy(a).addScaledVector(dir, d);
+  const x = (l1 * l1 + d * d - l2 * l2) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - x * x));
+  _c.copy(pole).addScaledVector(dir, -pole.dot(dir)).normalize();
+  return out.copy(a).addScaledVector(dir, x).addScaledVector(_c, h);
+}
+
+function buildTackAndRider(R, bodyGeo, headGeo, mats) {
+  const { B, body, head } = R;
+  const look = RIDER_LOOK[B.name] ?? RIDER_LOOK.Thoroughbred;
+  const leather = 0x5a3620, dark = 0x2a1a10;
+  const add = (parent, m) => { parent.add(m); mats.push(m.material); return m; };
+  // back profile at the saddle
+  const { P, D } = bodyGeo.userData; const p = new V3(), d = new V3();
+  const at = (z) => { let bt = 0, bd = 1e9; for (let i = 0; i <= 200; i++) { P.getPoint(i / 200, p); if (Math.abs(p.z - z) < bd) { bd = Math.abs(p.z - z); bt = i / 200; } } P.getPoint(bt, p); D.getPoint(bt, d); return { y: p.y, top: p.y + d.y, w: d.x, ht: d.y, hb: d.z }; };
+  const seat = at(0.08);
+
+  // saddle pad, saddle (cantle and pommel rise at either end), flaps and girth
+  add(body, shellPatch(bodyGeo, -0.24, 0.32, 0.24 * Math.PI, 0.76 * Math.PI, 0.007, { color: 0xf1eee6 }));
+  add(body, shellPatch(bodyGeo, -0.22, 0.3, 0.3 * Math.PI, 0.7 * Math.PI,
+    (zn, an) => 0.02 + 0.075 * Math.exp(-(((zn - 0.04) / 0.1) ** 2)) + 0.05 * Math.exp(-(((zn - 0.95) / 0.09) ** 2)) + 0.015 * Math.sin(an * Math.PI),
+    { color: leather }));
+  for (const [a0, a1] of [[0.1 * Math.PI, 0.32 * Math.PI], [0.68 * Math.PI, 0.9 * Math.PI]])
+    add(body, shellPatch(bodyGeo, 0.0, 0.3, a0, a1, 0.016, { color: leather, rows: 6, cols: 8 }));
+  add(body, shellPatch(bodyGeo, 0.2, 0.26, -Math.PI * 0.95, Math.PI * 0.12, 0.012, { color: dark, rows: 2, cols: 24 }));
+  add(body, shellPatch(bodyGeo, 0.2, 0.26, Math.PI * 0.88, Math.PI * 1.05, 0.012, { color: dark, rows: 2, cols: 6 }));
+
+  // bridle: crownpiece behind the ears, noseband, cheek pieces, bit rings
+  const HL = B.headL;
+  add(head, shellPatch(headGeo, 0.02 * HL, 0.05 * HL, -Math.PI, Math.PI, 0.006, { color: dark, rows: 2, cols: 28 }));
+  add(head, shellPatch(headGeo, 0.39 * HL, 0.43 * HL, -Math.PI, Math.PI, 0.006, { color: dark, rows: 2, cols: 28 }));
+  for (const a of [0, Math.PI]) add(head, shellPatch(headGeo, 0.03 * HL, 0.42 * HL, a - 0.06, a + 0.06, 0.005, { color: dark, rows: 10, cols: 2 }));
+  const bits = [];
+  for (const sx of [1, -1]) {
+    const ring = add(head, new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.004, 6, 16), new THREE.MeshStandardMaterial({ color: 0xc9c9c9, metalness: 0.9, roughness: 0.3 })));
+    ring.position.set(sx * 0.068, -0.035, 0.53 * HL); ring.rotation.y = Math.PI / 2; bits.push(ring);
+  }
+
+  // the rider
+  const rs = look.size / B.S;                             // rider scale inside the horse's scaled body
+  const rider = new THREE.Group();
+  rider.position.set(0, seat.top + 0.045, 0.08); rider.scale.setScalar(rs);
+  body.add(rider);
+  const M = (color, o = {}) => { const m = new THREE.MeshPhysicalMaterial({ color, roughness: 0.65, sheen: 0.3, sheenRoughness: 0.5, ...o }); mats.push(m); return m; };
+  const jacket = M(look.jacket), breeches = M(0xf1efe9, { roughness: 0.8 }), boots = M(0x111111, { roughness: 0.3, clearcoat: 0.6 }),
+    skin = M(0xe2b396, { roughness: 0.6 }), glove = M(0x161616), helmetM = M(0x15171c, { roughness: 0.45, sheen: 0.8 }), hair = M(0x4b3424),
+    leatherM = M(leather), metal = new THREE.MeshStandardMaterial({ color: 0xcfcfcf, metalness: 0.9, roughness: 0.3 });
+  mats.push(metal);
+  const part = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; rider.add(m); return m; };
+  const cap = (r, len, mat) => part(new THREE.CapsuleGeometry(r, len, 4, 12), mat);
+  const L_TH = 0.43, L_SH = 0.43, L_UA = 0.28, L_FA = 0.26;
+  const pelvis = part(new THREE.SphereGeometry(0.15, 18, 12), breeches); pelvis.scale.set(1.15, 0.72, 0.95);
+  const torso = cap(0.14, 0.24, jacket); torso.scale.set(1.18, 1, 0.78);
+  const neckM = cap(0.045, 0.05, skin);
+  const headG = new THREE.Group(); rider.add(headG);
+  const face = new THREE.Mesh(new THREE.SphereGeometry(0.092, 18, 14), skin); face.scale.set(0.92, 1.05, 1); face.castShadow = true; headG.add(face);
+  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.106, 20, 12, 0, TAU, 0, Math.PI * 0.55), helmetM); helmet.position.y = 0.022; helmet.rotation.x = -0.18; helmet.castShadow = true; headG.add(helmet);
+  const peak = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.012, 16, 1, false, -Math.PI / 2, Math.PI), helmetM); peak.position.set(0, 0.01, 0.075); peak.rotation.x = 0.25; headG.add(peak);
+  const bun = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), hair); bun.position.set(0, -0.04, -0.1); headG.add(bun);
+  const limbs = {};
+  for (const sx of [1, -1]) {
+    limbs[sx] = {
+      ua: cap(0.046, L_UA - 0.09, jacket), fa: cap(0.04, L_FA - 0.08, jacket), hand: part(new THREE.SphereGeometry(0.04, 12, 10), glove),
+      th: cap(0.078, L_TH - 0.15, breeches), sh: cap(0.056, L_SH - 0.1, boots), foot: part(new THREE.BoxGeometry(0.085, 0.07, 0.25), boots),
+      leatherS: part(new THREE.BoxGeometry(0.025, 1, 0.006), leatherM), iron: part(new THREE.TorusGeometry(0.05, 0.007, 6, 16), metal),
+    };
+  }
+  // reins live in world space (they span horse and rider)
+  const reinMat = new THREE.MeshStandardMaterial({ color: dark, roughness: 0.7 }); mats.push(reinMat);
+  const reinGeo = new THREE.CylinderGeometry(0.008, 0.008, 1, 5).translate(0, 0.5, 0);
+  const reins = [[], []];
+  for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) { const m = new THREE.Mesh(reinGeo, reinMat); m.castShadow = true; scene.add(m); R.extras.push(m); reins[r].push(m); }
+
+  // body half-width at the height of the rider's knee and foot, so legs wrap around the barrel
+  const widthAt = (y) => { const dy = seat.y - y, h = dy > 0 ? seat.hb : seat.ht; return seat.w * Math.sqrt(Math.max(0, 1 - (dy / h) ** 2)); };
+  const kneeY = seat.top + 0.045 - 0.36 * rs, footY = seat.top + 0.045 - 0.62 * rs;
+  const footX = Math.max(0.16, (widthAt(footY) + 0.07) / rs), kneeX = Math.max(0.17, (widthAt(kneeY) + 0.08) / rs);
+  // where the hands hold the reins, above the withers (in rider units)
+  const handBase = new V3(0.085, (at(0.45).top + 0.17 - rider.position.y) / rs, (0.5 - rider.position.z) / rs);
+  const leatherTop = (sx) => new V3(sx * (seat.w * 0.96) / rs, (seat.top - 0.04 - rider.position.y) / rs, (0.13 - rider.position.z) / rs);
+
+  R.rider = { group: rider, rs, pelvis, torso, neckM, headG, limbs, reins, bits, footX, kneeX, handBase, leatherTop, lean: 0, rise: 0, release: 0,
+    L_TH, L_SH, L_UA, L_FA };
+}
+
+const _p0 = new V3(), _u = new V3(), _sh = new V3(), _hd = new V3(), _hand = new V3(), _el = new V3(), _hip = new V3(), _ft = new V3(), _kn = new V3(), _pole = new V3();
+const _w1 = new V3(), _w2 = new V3(), _wc = new V3();
+function updateRider(R, s, g, dt, time) {
+  const r = R.rider, { ww, wt, wg, ph, jW, J } = g;
+  // posture targets: rising trot, half-seat at the gallop, folding over jumps, a lurch when the horse stops dead
+  let lean = 0.06 + wt * 0.12 + wg * 0.55;
+  let rise = wt * 0.085 * (0.5 + 0.5 * Math.cos(TAU * 2 * (ph - 0.32))) + wg * 0.11;
+  let release = 0;
+  if (J) {
+    if (J.state === 'prep') { lean += 0.35 * jW; rise += 0.05 * jW; }
+    else if (J.state === 'air') { lean = lerp(lean, 0.95, jW); rise = lerp(rise, 0.16, jW); release = 1; }
+    else { lean = lerp(lean, 0.25, jW); rise *= 1 - jW * 0.5; release = jW * 0.5; }
+  }
+  if (s.stun > 0) { const u = Math.sin(Math.PI * (1 - s.stun / 1.1)); lean += 0.5 * u; }
+  lean -= R.body.rotation.x * 0.8;                      // stay balanced over the horse when it pitches
+  r.lean = damp(r.lean, lean, 10, dt); r.rise = damp(r.rise, rise, 14, dt); r.release = damp(r.release, release, 6, dt);
+  const roll = -s.turn * 0.12 * clamp(Math.abs(s.speed) / 4, 0, 1) + Math.sin(TAU * ph) * 0.03 * ww;
+
+  _p0.set(0, 0.03 + r.rise, -0.02 - r.rise * 0.5);
+  _u.set(-Math.sin(roll), Math.cos(r.lean) * Math.cos(roll), Math.sin(r.lean)).normalize();
+  const side = _sh.set(Math.cos(roll), Math.sin(roll), 0);
+  r.pelvis.position.copy(_p0).y += 0.02; r.pelvis.rotation.set(r.lean * 0.5, 0, roll);
+  placeSeg(r.torso, _w1.copy(_p0).addScaledVector(_u, 0.06), _w2.copy(_p0).addScaledVector(_u, 0.38));
+  const neckBase = _w1.copy(_p0).addScaledVector(_u, 0.47);
+  _hd.copy(neckBase).add(_w2.set(0, Math.cos(r.lean * 0.4) * 0.11, Math.sin(r.lean * 0.4) * 0.11 + 0.025));
+  placeSeg(r.neckM, neckBase, _w2.copy(neckBase).lerp(_hd, 0.6));
+  r.headG.position.copy(_hd); r.headG.rotation.set(r.lean * 0.3 - 0.08, 0, roll * 0.5);
+
+  for (const sx of [1, -1]) {
+    const l = r.limbs[sx];
+    // arm: shoulder -> elbow -> hand on the reins
+    const sh = _w1.copy(_p0).addScaledVector(_u, 0.41).addScaledVector(side, 0.17 * sx);
+    _hand.set(sx * r.handBase.x, r.handBase.y - r.release * 0.08, r.handBase.z + r.release * 0.2);
+    _pole.set(sx * 0.5, -1, -0.6);
+    ik2(sh, _hand, r.L_UA, r.L_FA, _pole, _el);
+    placeSeg(l.ua, sh, _el); placeSeg(l.fa, _el, _hand); l.hand.position.copy(_hand);
+    // leg: hip -> knee -> foot in the stirrup
+    _hip.copy(_p0).add(_w2.set(sx * 0.1, -0.01, 0.03));
+    _ft.set(sx * r.footX, -0.63, 0.1);
+    _pole.set(sx * (r.kneeX - 0.1) * 3, 0.1, 1);
+    ik2(_hip, _ft, r.L_TH, r.L_SH, _pole, _kn);
+    placeSeg(l.th, _hip, _kn); placeSeg(l.sh, _kn, _ft);
+    l.foot.position.copy(_ft).add(_w2.set(0, -0.03, 0.06)); l.foot.rotation.set(0, 0, 0);
+    // stirrup leather and iron
+    const top = r.leatherTop(sx), bottom = _w2.copy(_ft).add(_w1.set(0, -0.04, 0.02));
+    l.leatherS.position.addVectors(top, bottom).multiplyScalar(0.5); l.leatherS.scale.y = top.distanceTo(bottom);
+    _d.subVectors(top, bottom).normalize(); l.leatherS.quaternion.setFromUnitVectors(_Y, _d);
+    l.iron.position.copy(bottom); l.iron.rotation.set(0, Math.PI / 2, 0);
+  }
+
+  // reins: from each bit ring to the matching hand, with a little sag
+  R.root.updateMatrixWorld(true);
+  for (let k = 0; k < 2; k++) {
+    const sx = k === 0 ? 1 : -1;
+    r.bits[k].getWorldPosition(_w1);
+    r.limbs[sx].hand.getWorldPosition(_w2);
+    const dist = _w1.distanceTo(_w2);
+    _wc.addVectors(_w1, _w2).multiplyScalar(0.5); _wc.y -= dist * (0.07 + 0.05 * (1 - r.release));
+    let prev = _a.copy(_w1);
+    for (let i = 0; i < 6; i++) {
+      const t = (i + 1) / 6, it = 1 - t;
+      const nx = it * it * _w1.x + 2 * it * t * _wc.x + t * t * _w2.x, ny = it * it * _w1.y + 2 * it * t * _wc.y + t * t * _w2.y, nz = it * it * _w1.z + 2 * it * t * _wc.z + t * t * _w2.z;
+      const m = r.reins[k][i];
+      m.position.copy(prev); _b.set(nx, ny, nz); _d.subVectors(_b, prev); m.scale.set(1, _d.length(), 1); m.quaternion.setFromUnitVectors(_Y, _d.normalize());
+      prev = _a.set(nx, ny, nz);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- gaits
@@ -968,23 +1346,22 @@ function gaitParams(v) {
   return out;
 }
 
-// ---------------------------------------------------------------- dust
-const DUST_N = 500;
-const dust = (() => {
-  const pos = new Float32Array(DUST_N * 3), life = new Float32Array(DUST_N), size = new Float32Array(DUST_N);
-  const vel = new Float32Array(DUST_N * 3), max = new Float32Array(DUST_N);
+// ---------------------------------------------------------------- particles: hoof dust and water splashes
+function makeParticles({ n, color, alpha, grav, drag, rise, spread, size, grow, life }) {
+  const pos = new Float32Array(n * 3), lifeA = new Float32Array(n), sizeA = new Float32Array(n);
+  const vel = new Float32Array(n * 3), max = new Float32Array(n);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('aLife', new THREE.BufferAttribute(life, 1));
-  geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+  geo.setAttribute('aLife', new THREE.BufferAttribute(lifeA, 1));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(sizeA, 1));
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false,
-    uniforms: { uColor: { value: new THREE.Color(0xb7a88a) }, uScale: { value: innerHeight } },
+    uniforms: { uColor: { value: new THREE.Color(color) }, uScale: { value: innerHeight }, uAlpha: { value: alpha } },
     vertexShader: `attribute float aLife, aSize; varying float vL; uniform float uScale;
       void main(){ vL = aLife; vec4 mv = modelViewMatrix * vec4(position,1.); gl_Position = projectionMatrix * mv;
       gl_PointSize = aLife > 0.0 ? aSize * uScale * 0.5 / -mv.z : 0.0; }`,
-    fragmentShader: `uniform vec3 uColor; varying float vL;
-      void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d) * vL * 0.28; if (a < 0.003) discard;
+    fragmentShader: `uniform vec3 uColor; uniform float uAlpha; varying float vL;
+      void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d) * vL * uAlpha; if (a < 0.003) discard;
       gl_FragColor = vec4(uColor, a);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
@@ -994,56 +1371,221 @@ const dust = (() => {
   let next = 0;
   return {
     mat,
-    spawn(p, n, strength) {
-      for (let k = 0; k < n; k++) {
-        const i = next; next = (next + 1) % DUST_N;
-        pos[i * 3] = p.x + (Math.random() - 0.5) * 0.15; pos[i * 3 + 1] = 0.04; pos[i * 3 + 2] = p.z + (Math.random() - 0.5) * 0.15;
-        const a = Math.random() * TAU, s = (0.2 + Math.random() * 0.5) * strength;
-        vel[i * 3] = Math.cos(a) * s; vel[i * 3 + 1] = (0.25 + Math.random() * 0.45) * strength; vel[i * 3 + 2] = Math.sin(a) * s;
-        max[i] = 0.9 + Math.random() * 0.8; life[i] = 1; size[i] = 0.15;
+    spawn(p, count, strength) {
+      for (let k = 0; k < count; k++) {
+        const i = next; next = (next + 1) % n;
+        pos[i * 3] = p.x + (Math.random() - 0.5) * 0.15; pos[i * 3 + 1] = p.y - 0.04; pos[i * 3 + 2] = p.z + (Math.random() - 0.5) * 0.15;
+        const a = Math.random() * TAU, sp = (0.2 + Math.random() * 0.5) * strength * spread;
+        vel[i * 3] = Math.cos(a) * sp; vel[i * 3 + 1] = (0.25 + Math.random() * 0.45) * strength * rise; vel[i * 3 + 2] = Math.sin(a) * sp;
+        max[i] = life * (0.7 + Math.random() * 0.6); lifeA[i] = 1; sizeA[i] = size;
       }
     },
     update(dt) {
-      for (let i = 0; i < DUST_N; i++) {
-        if (life[i] <= 0) continue;
-        life[i] -= dt / max[i];
+      for (let i = 0; i < n; i++) {
+        if (lifeA[i] <= 0) continue;
+        lifeA[i] -= dt / max[i];
+        vel[i * 3 + 1] -= grav * dt;
         pos[i * 3] += vel[i * 3] * dt; pos[i * 3 + 1] += vel[i * 3 + 1] * dt; pos[i * 3 + 2] += vel[i * 3 + 2] * dt;
-        vel[i * 3] *= 0.96; vel[i * 3 + 1] *= 0.94; vel[i * 3 + 2] *= 0.96;
-        size[i] += dt * 0.55;
+        const dr = Math.exp(-drag * dt); vel[i * 3] *= dr; vel[i * 3 + 2] *= dr; if (!grav) vel[i * 3 + 1] *= dr;
+        sizeA[i] += dt * grow;
       }
       geo.attributes.position.needsUpdate = geo.attributes.aLife.needsUpdate = geo.attributes.aSize.needsUpdate = true;
     }
   };
-})();
+}
+const dust = makeParticles({ n: 500, color: 0xb7a88a, alpha: 0.28, grav: 0, drag: 3, rise: 1, spread: 1, size: 0.15, grow: 0.55, life: 1.3 });
+const splash = makeParticles({ n: 400, color: 0xd8e6ec, alpha: 0.7, grav: 9.8, drag: 1, rise: 5, spread: 1.6, size: 0.07, grow: 0.05, life: 0.7 });
 
-// ---------------------------------------------------------------- hoof-beat audio (synthesised)
+// ---------------------------------------------------------------- sound (all synthesised with Web Audio)
 let actx = null, master = null, noiseBuf = null, muted = false;
+const amb = { wind: null, rain: null };
 function initAudio() {
   if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
   actx = new (window.AudioContext || window.webkitAudioContext)();
-  master = actx.createGain(); master.gain.value = 0.55; master.connect(actx.destination);
-  noiseBuf = actx.createBuffer(1, actx.sampleRate * 0.25, actx.sampleRate);
+  master = actx.createGain(); master.gain.value = muted ? 0 : 0.55; master.connect(actx.destination);
+  noiseBuf = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate);
   const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  // looping beds: wind (rises with speed) and rain
+  const bed = (type, freq, q) => {
+    const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const f = actx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = actx.createGain(); g.gain.value = 0;
+    src.connect(f).connect(g).connect(master); src.start();
+    return { f, g };
+  };
+  amb.wind = bed('bandpass', 500, 0.6);
+  amb.rain = bed('highpass', 900, 0.4);
+}
+function setMuted(m) { muted = m; if (master) master.gain.setTargetAtTime(m ? 0 : 0.55, actx.currentTime, 0.05); }
+const audioOk = () => actx && !muted;
+function env(g, t, peak, attack, decay) {
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+}
+function noiseHit(t, { type = 'lowpass', freq = 800, q = 1, peak = 0.5, attack = 0.004, decay = 0.1, rate = 1, pan = 0 }) {
+  const n = actx.createBufferSource(); n.buffer = noiseBuf; n.playbackRate.value = rate;
+  const f = actx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = actx.createGain(); env(g, t, peak, attack, decay);
+  const p = actx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1);
+  n.connect(f).connect(g).connect(p).connect(master);
+  const off = Math.random() * 1.5; n.start(t, off); n.stop(t + attack + decay + 0.05);
+  return f;
 }
 function hoofSound(intensity, pan) {
-  if (!actx || muted) return;
+  if (!audioOk() || intensity < 0.01) return;
   const t = actx.currentTime + 0.005;
-  const p = actx.createStereoPanner(); p.pan.value = pan; p.connect(master);
-  const n = actx.createBufferSource(); n.buffer = noiseBuf; n.playbackRate.value = 0.8 + Math.random() * 0.4;
-  const bp = actx.createBiquadFilter(); bp.type = 'lowpass'; bp.frequency.value = 700 + Math.random() * 400;
-  const ng = actx.createGain(); ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.5 * intensity, t + 0.004); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
-  n.connect(bp).connect(ng).connect(p); n.start(t); n.stop(t + 0.12);
+  noiseHit(t, { freq: 700 + Math.random() * 400, peak: 0.5 * intensity, decay: 0.09, rate: 0.8 + Math.random() * 0.4, pan });
   const o = actx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(110 + Math.random() * 20, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.1);
-  const og = actx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.7 * intensity, t + 0.005); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
-  o.connect(og).connect(p); o.start(t); o.stop(t + 0.16);
+  const og = actx.createGain(); env(og, t, 0.7 * intensity, 0.005, 0.13);
+  const p = actx.createStereoPanner(); p.pan.value = pan;
+  o.connect(og).connect(p).connect(master); o.start(t); o.stop(t + 0.16);
 }
+function splashSound(v) {
+  if (!audioOk()) return;
+  const t = actx.currentTime + 0.005;
+  noiseHit(t, { type: 'bandpass', freq: 1200 + Math.random() * 600, q: 0.7, peak: 0.45 * v, attack: 0.01, decay: 0.28 });
+  noiseHit(t + 0.03, { type: 'highpass', freq: 2500, peak: 0.18 * v, attack: 0.01, decay: 0.2 });
+}
+// a short exhale through the nostrils, once per stride at the gallop
+function breathHuff(B) {
+  if (!audioOk()) return;
+  noiseHit(actx.currentTime + 0.02, { type: 'bandpass', freq: 520 / Math.sqrt(B.S), q: 1.2, peak: 0.16, attack: 0.02, decay: 0.16 });
+}
+// a fluttering snort
+function snort(B, vol = 1) {
+  if (!audioOk()) return;
+  const t = actx.currentTime + 0.02;
+  const n = actx.createBufferSource(); n.buffer = noiseBuf;
+  const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 650 / Math.sqrt(B.S); f.Q.value = 1.1;
+  const g = actx.createGain(); env(g, t, 0.4 * vol, 0.03, 0.45);
+  const flutter = actx.createGain(); flutter.gain.value = 0.6;
+  const lfo = actx.createOscillator(); lfo.frequency.value = 28; const lg = actx.createGain(); lg.gain.value = 0.4;
+  lfo.connect(lg).connect(flutter.gain);
+  n.connect(f).connect(flutter).connect(g).connect(master);
+  n.start(t, Math.random()); n.stop(t + 0.55); lfo.start(t); lfo.stop(t + 0.55);
+}
+// whinny: a bright voice that rises, wobbles and falls away. Donkeys bray instead.
+function neigh(B, vol = 1, pan = 0) {
+  if (!audioOk() || vol < 0.02) return;
+  if (B.kind === 'Donkey') return bray(vol, pan);
+  const t = actx.currentTime + 0.03, p = 1 / Math.pow(B.S, 0.7), dur = 1.25;
+  const out = actx.createGain(); out.gain.value = 0;
+  out.gain.setValueAtTime(0.0001, t); out.gain.exponentialRampToValueAtTime(0.22 * vol, t + 0.06);
+  out.gain.setValueAtTime(0.22 * vol, t + dur * 0.7); out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  const pn = actx.createStereoPanner(); pn.pan.value = pan;
+  const f1 = actx.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 1500 * p; f1.Q.value = 1.4;
+  const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 350;
+  out.connect(f1).connect(hp).connect(pn).connect(master);
+  const vib = actx.createOscillator(); vib.frequency.setValueAtTime(7, t); vib.frequency.linearRampToValueAtTime(12, t + dur);
+  const vg = actx.createGain(); vg.gain.setValueAtTime(15 * p, t); vg.gain.linearRampToValueAtTime(90 * p, t + dur);
+  vib.connect(vg); vib.start(t); vib.stop(t + dur);
+  for (const det of [1, 1.012]) {
+    const o = actx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(520 * p * det, t);
+    o.frequency.exponentialRampToValueAtTime(1050 * p * det, t + 0.16);
+    o.frequency.setValueAtTime(1050 * p * det, t + 0.45);
+    o.frequency.exponentialRampToValueAtTime(820 * p * det, t + 0.8);
+    o.frequency.exponentialRampToValueAtTime(430 * p * det, t + dur);
+    vg.connect(o.frequency);
+    o.connect(out); o.start(t); o.stop(t + dur + 0.05);
+  }
+  setTimeout(() => snort(B, vol * 0.6), dur * 1000 + 60);
+}
+function bray(vol = 1, pan = 0) {
+  const t0 = actx.currentTime + 0.03;
+  const pn = actx.createStereoPanner(); pn.pan.value = pan; pn.connect(master);
+  for (let c = 0; c < 3; c++) {
+    const t = t0 + c * 0.82;
+    const parts = [[880, 1040, 0.32, 'square', 0.07], [300, 230, 0.42, 'sawtooth', 0.22]]; // "hee" in, "haw" out
+    parts.forEach(([a, b, d, type, peak], j) => {
+      const s = t + j * 0.36;
+      const o = actx.createOscillator(); o.type = type; o.frequency.setValueAtTime(a, s); o.frequency.linearRampToValueAtTime(b, s + d);
+      const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = j ? 900 : 1600; f.Q.value = 1.2;
+      const g = actx.createGain(); env(g, s, peak * vol, 0.04, d);
+      o.connect(f).connect(g).connect(pn); o.start(s); o.stop(s + d + 0.1);
+    });
+  }
+}
+// birdsong: quick chirps and trills
+function chirp(vol, pan) {
+  if (!audioOk() || vol < 0.02) return;
+  const t0 = actx.currentTime + 0.02, n = 2 + Math.floor(Math.random() * 5), base = 2600 + Math.random() * 1800;
+  const pn = actx.createStereoPanner(); pn.pan.value = clamp(pan, -1, 1); pn.connect(master);
+  for (let i = 0; i < n; i++) {
+    const t = t0 + i * (0.07 + Math.random() * 0.05);
+    const o = actx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(base * (0.9 + Math.random() * 0.2), t);
+    o.frequency.exponentialRampToValueAtTime(base * (Math.random() < 0.5 ? 1.35 : 0.75), t + 0.06);
+    const g = actx.createGain(); env(g, t, 0.06 * vol, 0.008, 0.06);
+    o.connect(g).connect(pn); o.start(t); o.stop(t + 0.09);
+  }
+}
+function flutterSound(vol, pan) {
+  if (!audioOk()) return;
+  const t = actx.currentTime + 0.01;
+  for (let i = 0; i < 6; i++) noiseHit(t + i * 0.045, { type: 'bandpass', freq: 1800, q: 0.8, peak: 0.12 * vol, attack: 0.005, decay: 0.035, pan });
+}
+function updateAmbientAudio(dt, speed, rain) {
+  if (!actx) return;
+  const t = actx.currentTime;
+  amb.wind.g.gain.setTargetAtTime(0.002 + 0.022 * clamp(speed / 10, 0, 1) ** 2, t, 0.3);
+  amb.wind.f.frequency.setTargetAtTime(380 + speed * 45, t, 0.3);
+  amb.rain.g.gain.setTargetAtTime(0.03 * rain, t, 0.5);
+}
+
+// ---------------------------------------------------------------- hoofprints
+const PRINTS_N = 400, PRINT_LIFE = 45;
+const prints = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 34, 6, 32, 34, 30); grd.addColorStop(0, 'rgba(0,0,0,0.55)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd; g.beginPath(); g.ellipse(32, 34, 26, 29, 0, 0, TAU); g.fill();
+  // the shoe: a U open towards the heel (bottom of the texture = back of the hoof)
+  g.strokeStyle = 'rgba(0,0,0,0.95)'; g.lineWidth = 7; g.lineCap = 'round';
+  g.beginPath(); g.arc(32, 32, 18, Math.PI / 2 + 0.55, Math.PI / 2 - 0.55 + TAU, false); g.stroke();
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x3b2e22, map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, roughness: 1 });
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aFade; varying float vFade;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFade = aFade;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vFade;')
+      .replace('#include <alphamap_fragment>', '#include <alphamap_fragment>\ndiffuseColor.a *= vFade;');
+  };
+  const geo = new THREE.PlaneGeometry(0.15, 0.17).rotateX(-Math.PI / 2);
+  const fade = new Float32Array(PRINTS_N), base = new Float32Array(PRINTS_N), born = new Float32Array(PRINTS_N).fill(-1e9);
+  geo.setAttribute('aFade', new THREE.InstancedBufferAttribute(fade, 1));
+  const im = new THREE.InstancedMesh(geo, mat, PRINTS_N); im.frustumCulled = false; im.receiveShadow = true;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new V3(0, 1, 0);
+  for (let i = 0; i < PRINTS_N; i++) { m.makeScale(0, 0, 0); im.setMatrixAt(i, m); }
+  scene.add(im);
+  let next = 0;
+  return {
+    add(x, z, yaw, S, now) {
+      const i = next; next = (next + 1) % PRINTS_N;
+      q.setFromAxisAngle(up, yaw + Math.PI);
+      m.compose(new V3(x, groundH(x, z) + 0.012, z), q, new V3(S, 1, S));
+      im.setMatrixAt(i, m); im.instanceMatrix.needsUpdate = true;
+      const onTrack = Math.abs(Math.hypot((x - COURSE.cx) / COURSE.rx, (z - COURSE.cz) / COURSE.rz) - 1) * Math.min(COURSE.rx, COURSE.rz) < 3.2;
+      base[i] = onTrack ? 0.85 : 0.4; born[i] = now;
+    },
+    update(now, wet) {
+      for (let i = 0; i < PRINTS_N; i++) { const a = (now - born[i]) / PRINT_LIFE; fade[i] = a < 1 ? base[i] * (1 - a * a) * (1 + wet * 0.3) : 0; }
+      geo.attributes.aFade.needsUpdate = true;
+    },
+  };
+})();
+function addHoofprint(x, z, yaw, S) { prints.add(x, z, yaw, S, clock.elapsedTime); }
 
 // ---------------------------------------------------------------- input
 const keys = {};
 let gait = 0;
 const hudG = [...document.querySelectorAll('.gaits span')];
 const hudS = document.getElementById('spd');
-function setGait(g) { gait = clamp(g, 0, 3); hudG.forEach((el, i) => el.classList.toggle('on', i === gait)); }
+function setGait(g) { gait = clamp(g, -1, 3); hudG.forEach((el, i) => el.classList.toggle('on', i - 1 === gait)); }
+const gaitSpeed = (g) => g < 0 ? -0.9 : GAIT_SPEED[g];
+function playerControl() {
+  const tIn = ((keys.ArrowLeft || keys.a || keys.A) ? 1 : 0) - ((keys.ArrowRight || keys.d || keys.D) ? 1 : 0);
+  return { target: gaitSpeed(gait) * H.B.speed, turnIn: tIn, player: true, vol: 1 };
+}
 setGait(0);
 
 // breed picker
@@ -1066,13 +1608,15 @@ addEventListener('keydown', (e) => {
   const k = e.key;
   if (k.startsWith('Arrow') || k === ' ') e.preventDefault();
   initAudio();
-  idle = 0;
+  if (st) st.idle = 0;
   if (!e.repeat) {
-    if ((k === 'ArrowUp' || k === 'w' || k === 'W') && st.stun <= 0) setGait(gait + 1);
+    if ((k === 'ArrowUp' || k === 'w' || k === 'W') && st && st.stun <= 0) setGait(gait + 1);
     if (k === 'r' || k === 'R') resetCourse();
+    if (k === 't' || k === 'T') setEnv(timeIdx + 1, wxIdx);
+    if (k === 'y' || k === 'Y') setEnv(timeIdx, wxIdx + 1);
     if (k === 'ArrowDown' || k === 's' || k === 'S') setGait(gait - 1);
     if (k === ' ') startJump();
-    if (k === 'm' || k === 'M') muted = !muted;
+    if (k === 'm' || k === 'M') setMuted(!muted);
     if (k >= '1' && k <= String(BREEDS.length)) setBreed(+k - 1);
   }
   keys[k] = true;
@@ -1096,14 +1640,15 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('wheel', (e) => { e.preventDefault(); camDist = clamp(camDist * Math.exp(e.deltaY * 0.001), 2.5, 25); }, { passive: false });
 
 // ---------------------------------------------------------------- simulation state
-const st = { x: 0, z: 0, yaw: 0, speed: 0, phase: 0, turn: 0, lean: 0, graze: 0, breath: 0, swish: 0, swishT: 3, jump: null, stun: 0, rvx: 0, rvz: 0 };
+let st; // the player's horse state (created once the terrain exists, see newRigState)
 
 // ---------------------------------------------------------------- jumping
 const GRAV = 9.8, PREP_T = 0.2, LAND_T = 0.32;
+const jumpHeight = (B, v) => lerp(0.7, 1.15, clamp(v / B.speed / 9.5, 0, 1)) * B.S * (0.7 + 0.3 * B.k);
 function startJump() {
-  if (st.jump || !H || st.stun > 0) return;
+  if (st.jump || !H || st.stun > 0 || st.speed < -0.05) return;
   const g = clamp(st.speed / H.B.speed / 9.5, 0, 1);            // 0 standing .. 1 full gallop
-  st.jump = { state: 'prep', t: 0, y: 0, vy: 0, T: 1, h: lerp(0.55, 1.15, g) * H.B.S * (0.7 + 0.3 * H.B.k) };
+  st.jump = { state: 'prep', t: 0, y: 0, vy: 0, T: 1, h: jumpHeight(H.B, st.speed) };
 }
 // keyframes [u, y, z, flex] for each leg pair while airborne (horse-local units, scaled by leg length later)
 const AIR_FRONT = [[0, 0.30, 0.10, 1.8], [0.15, 0.44, 0.14, 2.5], [0.6, 0.44, 0.14, 2.4], [0.85, 0.14, 0.26, 0.7], [1, 0.02, 0.24, 0.25]];
@@ -1140,8 +1685,10 @@ function updateScore() { scoreEl.innerHTML = `<span class="good">✓ ${score.cle
 function crash(hit, v, air) {
   const J = st.jump;
   let msg;
-  if (hit.c) {
-    msg = hit.c.type === 'tree' ? 'Ouch! Ran into a tree' : hit.c.type === 'wing' ? 'Hit the wing — aim for the middle'
+  if (hit.bank) {
+    msg = air ? 'Too low to land on the bank' : 'Jump up the bank!';
+  } else if (hit.c) {
+    msg = hit.c.type === 'horse' ? 'Watch out for the other horses!' : hit.c.type === 'tree' ? 'Ouch! Ran into a tree' : hit.c.type === 'wing' ? 'Hit the wing — aim for the middle'
       : air ? 'Too low — hit the rock' : 'Blocked by a rock — jump it!';
   } else {
     const f = hit.f; f.faultT = 0;
@@ -1157,6 +1704,7 @@ function crash(hit, v, air) {
   shake = Math.min(0.35, 0.06 + v * 0.03);
   if (J) { if (J.state === 'prep') st.jump = null; else if (J.state === 'air') J.vy = Math.min(J.vy, 0); }
   crashSound(v);
+  setTimeout(() => { neigh(H.B, 0.9); answerNeigh(); }, 250);
   score.faults++; updateScore(); toast(msg, 'bad');
 }
 
@@ -1165,13 +1713,15 @@ function checkCollisions(dt) {
   const B = H.B, S = B.S, J = st.jump;
   const fx = Math.sin(st.yaw), fz = Math.cos(st.yaw);
   const air = !!(J && J.state === 'air');
-  const clear = J ? J.y + (air ? 0.3 * S * B.k : 0) : 0;    // hooves tuck up while airborne
+  const tuck = 0.3 * S * B.k;                                 // hooves tuck up while airborne
+  const alt = air ? J.base + J.y : st.rootY;
+  const clearOver = (baseY) => air ? alt - baseY + tuck : 0;
   const r = 0.3 * S * B.bodyW;
   const offs = [0.95 * S, 0, -0.85 * S];                      // chest, barrel, hindquarters
   let hit = null;
   for (const c of colliders) {
     if (Math.abs(st.x - c.x) > c.r + 2.5 || Math.abs(st.z - c.z) > c.r + 2.5) continue;
-    if (clear >= c.h) continue;
+    if (clearOver(c.y ?? st.rootY) >= c.h) continue;
     for (const o of offs) {
       const dx = st.x + fx * o - c.x, dz = st.z + fz * o - c.z, d = Math.hypot(dx, dz), min = c.r + r;
       if (d >= min) continue;
@@ -1194,13 +1744,15 @@ function checkCollisions(dt) {
     f.side = side;
     if (f.clipped && f.faultT > 1.5) f.clipped = false;
     if (f.h <= 0.01) continue;
+    const clear = clearOver(f.y);
     for (const o of offs) {
       const dx = st.x + fx * o - f.x, dz = st.z + fz * o - f.z;
       const lx = dx * f.ax.x + dz * f.ax.z, lz = dx * f.az.x + dz * f.az.z;
       if (Math.abs(lx) > f.L || Math.abs(lz) > f.D + r) continue;
       if (clear >= f.h) continue;
       const deficit = f.h - clear;
-      if (air && deficit < 0.28 * S) {           // just clipped it: penalty, but the horse keeps going
+      const farSide = lz * (fx * f.az.x + fz * f.az.z) > 0;   // this part of the horse is already over the fence
+      if ((air && deficit < 0.28 * S) || (J && farSide)) {           // just clipped it: penalty, but the horse keeps going
         if (!f.clipped) {
           f.clipped = true; f.faultT = 0;
           if (!f.solid) {
@@ -1217,6 +1769,15 @@ function checkCollisions(dt) {
       if (!hit) hit = { f, nx: f.az.x * sgn, nz: f.az.z * sgn };
     }
   }
+  // banks and other steps up are too high to walk up: they have to be jumped
+  {
+    const o = st.speed >= 0 ? 0.95 * S : -0.85 * S;
+    const need = groundH(st.x + fx * o, st.z + fz * o) - alt;
+    if (air ? need > tuck : need > 0.3 * S + 0.25) {
+      st.x = st.prevX; st.z = st.prevZ;
+      if (!hit) hit = { bank: true, nx: -fx * Math.sign(o), nz: -fz * Math.sign(o) };
+    }
+  }
   if (hit && st.stun <= 0) {
     const into = -(fx * hit.nx + fz * hit.nz);
     if (into > 0.3 && (st.speed > 0.6 || air)) crash(hit, st.speed, air);
@@ -1226,7 +1787,7 @@ function checkCollisions(dt) {
 function resetCourse() {
   fences.forEach(f => { resetFence(f); f.faultT = 99; f.side = 0; f.clipped = false; });
   score.clears = score.faults = 0; updateScore();
-  placeAtStart(); st.speed = 0; st.jump = null; st.stun = 0; st.rvx = st.rvz = 0; setGait(0);
+  placeAtStart(); st.speed = 0; st.jump = null; st.stun = 0; st.rvx = st.rvz = 0; st.rootY = groundH(st.x, st.z); setGait(0);
   toast('Course reset', 'info');
 }
 // start on the track, lined up 14 m before fence 1
@@ -1236,23 +1797,30 @@ function placeAtStart() {
   camState.yaw = st.yaw; camState.pos.set(st.x - Math.sin(st.yaw) * 7, 2.5, st.z - Math.cos(st.yaw) * 7);
 }
 
-let idle = 0;
 const clock = new THREE.Clock();
 const tmp = new V3(), hw = new V3();
+const newRigState = (x = 0, z = 0, yaw = 0) => ({
+  x, z, yaw, speed: 0, phase: 0, turn: 0, lean: 0, graze: 0, breath: 0, swish: 0, swishT: 3,
+  jump: null, stun: 0, rvx: 0, rvz: 0, idle: 0, rootY: groundH(x, z), prevX: x, prevZ: z, slope: 0, fast: 0,
+});
 
-function updateHorse(dt, time) {
-  const { root: horse, body, legs, neck, head, ears, tailSegs, B } = H;
-  const k = B.k, SM = B.speed;
+// One step of a horse: locomotion, jumping, terrain, gait animation and leg IK.
+// ctl: { target (m/s), turnIn (-1..1), player (bool), vol (0..1 sound level) }
+function updateRig(R, s, ctl, dt, time) {
+  const { root: horse, body, legs, neck, head, ears, tailSegs, B } = R;
+  const k = B.k, SM = B.speed, S = B.S;
   // --- locomotion
-  st.stun = Math.max(0, st.stun - dt);
-  const target = st.stun > 0 ? 0 : GAIT_SPEED[gait] * SM;
-  st.speed = st.speed < target ? Math.min(target, st.speed + 2.6 * dt) : Math.max(target, st.speed - 4.0 * dt);
-  const tIn = ((keys.ArrowLeft || keys.a || keys.A) ? 1 : 0) - ((keys.ArrowRight || keys.d || keys.D) ? 1 : 0);
-  st.turn = damp(st.turn, tIn, 6, dt);
-  const turnRate = st.speed < 0.2 ? 0.8 : lerp(1.15, 0.7, clamp((st.speed / SM - 1.7) / 7.8, 0, 1));
-  st.yaw += st.turn * turnRate * dt;
+  s.stun = Math.max(0, s.stun - dt);
+  const wet = inWater(s.x, s.z);
+  let target = s.stun > 0 ? 0 : ctl.target;
+  if (wet) target *= 0.55;                                   // wading is slow
+  s.speed = s.speed < target ? Math.min(target, s.speed + 2.6 * dt) : Math.max(target, s.speed - 4.0 * dt);
+  const aSpd = Math.abs(s.speed);
+  s.turn = damp(s.turn, ctl.turnIn, 6, dt);
+  const turnRate = aSpd < 0.2 ? 0.8 : lerp(1.15, 0.7, clamp((aSpd / SM - 1.7) / 7.8, 0, 1));
+  s.yaw += s.turn * turnRate * dt;
   // --- jump state machine
-  const J = st.jump;
+  let J = s.jump;
   let jPitch = 0, jCrouch = 0, jNeck = 0, jW = 0, jTail = 0;
   if (J) {
     J.t += dt;
@@ -1260,61 +1828,82 @@ function updateHorse(dt, time) {
       const u = clamp(J.t / PREP_T, 0, 1);
       jPitch = -0.24 * smooth(u); jCrouch = 0.07 * smooth(u); jNeck = -0.18 * smooth(u); jW = smooth(u);
       if (J.t >= PREP_T) {
-        J.state = 'air'; J.t = 0; J.vy = Math.sqrt(2 * GRAV * J.h); J.T = 2 * J.vy / GRAV;
-        hoofThud(0.5 + 0.4 * B.S);
+        J.state = 'air'; J.t = 0; J.y = 0; J.base = s.rootY; J.vy = Math.sqrt(2 * GRAV * J.h); J.T = 2 * J.vy / GRAV;
+        if (ctl.player) hoofThud(0.5 + 0.4 * S);
       }
     } else if (J.state === 'air') {
       J.vy -= GRAV * dt; J.y += J.vy * dt;
       const u = clamp(J.t / J.T, 0, 1);
-      jPitch = lerp(-0.3, 0.2, smooth(u)); jNeck = lerp(-0.12, 0.32, smooth(u)); jW = 1; jTail = 0.35 * Math.sin(Math.PI * u);
-      if (J.y <= 0 && J.t > 0.05) {
-        J.y = 0; J.state = 'land'; J.t = 0;
-        hoofThud(0.8 + 0.4 * B.S);
-        H.legs.forEach(L => { L.hoof.getWorldPosition(hw); dust.spawn(hw, 5, (0.6 + J.h * 0.5) * B.S); });
-      }
+      jPitch = lerp(J.fall ? 0.05 : -0.3, 0.2, smooth(u)); jNeck = lerp(-0.12, 0.32, smooth(u)); jW = J.fall ? Math.min(1, J.t * 4) : 1; jTail = 0.35 * Math.sin(Math.PI * u);
     } else {
       const u = clamp(J.t / LAND_T, 0, 1);
       jPitch = lerp(0.16, 0, smooth(u)); jCrouch = 0.09 * Math.sin(Math.PI * u); jNeck = lerp(0.25, 0, smooth(u)); jW = 1 - smooth(u);
-      if (u >= 1) st.jump = null;
+      if (u >= 1) s.jump = J = null;
     }
   }
-  const moveSpeed = st.stun > 0 ? 0 : J && J.state !== 'land' ? Math.max(st.speed, 2.4 * SM) : st.speed;
-  st.x += Math.sin(st.yaw) * moveSpeed * dt + st.rvx * dt;
-  st.z += Math.cos(st.yaw) * moveSpeed * dt + st.rvz * dt;
-  st.rvx *= Math.exp(-3.5 * dt); st.rvz *= Math.exp(-3.5 * dt);
-  checkCollisions(dt);
-  if (st.stun > 0) { // startled: throw the head up and rock back
-    const u = Math.sin(Math.PI * (1 - st.stun / 1.1));
+  const moveSpeed = s.stun > 0 ? 0 : J && J.state !== 'land' ? Math.max(s.speed, 2.4 * SM) : s.speed;
+  s.prevX = s.x; s.prevZ = s.z;
+  s.x += Math.sin(s.yaw) * moveSpeed * dt + s.rvx * dt;
+  s.z += Math.cos(s.yaw) * moveSpeed * dt + s.rvz * dt;
+  s.rvx *= Math.exp(-3.5 * dt); s.rvz *= Math.exp(-3.5 * dt);
+  if (ctl.player) checkCollisions(dt);
+  J = s.jump;
+  // --- height over the ground: landing, and stepping off drops
+  const gHere = groundH(s.x, s.z);
+  if (J && J.state === 'air') {
+    const alt = J.base + J.y;
+    if (alt <= gHere && J.t > 0.05) {
+      const drop = J.base - gHere;
+      J.state = 'land'; J.t = 0; J.y = 0; s.rootY = gHere;
+      const hard = clamp(J.h * 0.5 + Math.max(0, drop) * 0.6, 0.3, 1.4);
+      if (ctl.player) {
+        hoofThud(0.8 + 0.4 * S);
+        legs.forEach(L => { L.hoof.getWorldPosition(hw); if (inWater(hw.x, hw.z)) splash.spawn(hw, 10, 1.4); else dust.spawn(hw, 5, (0.6 + hard * 0.5) * S); });
+        if (inWater(s.x, s.z)) splashSound(1);
+      }
+    } else s.rootY = alt;
+  } else if (!J && s.rootY - gHere > 0.25 * S) {
+    s.jump = J = { state: 'air', t: 0, y: 0, vy: 0, base: s.rootY, T: 0.55, h: 0, fall: true };   // walked off a drop
+  } else s.rootY = gHere;
+  if (s.stun > 0) { // startled: throw the head up and rock back
+    const u = Math.sin(Math.PI * (1 - s.stun / 1.1));
     jPitch -= 0.16 * u; jNeck -= 0.4 * u; jCrouch += 0.05 * u;
   }
-  horse.position.set(st.x, J ? J.y : 0, st.z);
-  horse.rotation.y = st.yaw;
-  st.lean = damp(st.lean, -st.turn * clamp(st.speed / (9.5 * SM), 0, 1) * 0.12, 4, dt);
-  horse.rotation.z = st.lean;
+  const airborne = !!(J && J.state === 'air');
+  const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
+  const slopeT = airborne ? 0 : -Math.atan2(groundH(s.x + fx * 0.9 * S, s.z + fz * 0.9 * S) - groundH(s.x - fx * 0.9 * S, s.z - fz * 0.9 * S), 1.8 * S) * 0.75;
+  s.slope = damp(s.slope, slopeT, 8, dt);
+  horse.position.set(s.x, s.rootY, s.z);
+  horse.rotation.y = s.yaw;
+  s.lean = damp(s.lean, -s.turn * clamp(aSpd / (9.5 * SM), 0, 1) * 0.12, 4, dt);
+  horse.rotation.z = s.lean;
 
-  if (st.speed < 0.05 && Math.abs(tIn) < 0.01) idle += dt; else idle = 0;
+  if (aSpd < 0.05 && Math.abs(ctl.turnIn) < 0.01) s.idle += dt; else s.idle = 0;
 
   // --- gait
-  const animV = Math.max(st.speed, Math.abs(st.turn) * (st.speed < 0.5 ? 0.9 : 0));
+  const animV = Math.max(aSpd, Math.abs(s.turn) * (aSpd < 0.5 ? 0.9 : 0));
   const refV = animV / SM;                     // speed in "reference horse" units
   const G = gaitParams(refV);
-  st.phase = (st.phase + G.f * SM / (B.S * k) * dt) % 1;   // shorter legs -> quicker steps
-  const ph = st.phase;
+  const backing = s.speed < -0.05;
+  if (backing) { G.offs = [0.5, 0, 0, 0.5]; G.d = 0.55; }   // rein back: diagonal pairs
+  s.phase = (((s.phase + (backing ? -1 : 1) * G.f * SM / (S * k) * dt) % 1) + 1) % 1;   // shorter legs -> quicker steps
+  const ph = s.phase;
   const sweep = refV * G.d / G.f * k;           // hoof travel in horse-local units
   const [ww, wt, wg] = G.w;
+  const cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
 
   for (let i = 0; i < 4; i++) {
     const L = legs[i];
     const p = (((ph - G.offs[i]) % 1) + 1) % 1;
     if (p < G.d) {
-      const s = p / G.d;
-      L.z = sweep * (0.5 - s); L.y = 0;
-      L.flex = s > 0.8 ? (s - 0.8) / 0.2 * 0.35 * G.amp : 0;
+      const u = p / G.d;
+      L.z = sweep * (0.5 - u); L.y = 0;
+      L.flex = u > 0.8 ? (u - 0.8) / 0.2 * 0.35 * G.amp : 0;
     } else {
-      const s = (p - G.d) / (1 - G.d);
-      L.z = sweep * (-0.5 + smooth(s));
-      L.y = (L.front ? G.liftF : G.liftH) * G.amp * k * Math.sin(Math.PI * Math.pow(s, 0.8));
-      L.flex = (0.35 + (L.front ? G.flexF : G.flexH) * Math.sin(Math.PI * Math.min(1, s * 1.1))) * G.amp * (1 - smooth(clamp((s - 0.75) / 0.25, 0, 1))) ;
+      const u = (p - G.d) / (1 - G.d);
+      L.z = sweep * (-0.5 + smooth(u));
+      L.y = (L.front ? G.liftF : G.liftH) * G.amp * k * Math.sin(Math.PI * Math.pow(u, 0.8));
+      L.flex = (0.35 + (L.front ? G.flexF : G.flexH) * Math.sin(Math.PI * Math.min(1, u * 1.1))) * G.amp * (1 - smooth(clamp((u - 0.75) / 0.25, 0, 1)));
     }
     if (J && jW > 0) {
       // blend the gait pose toward the jump pose
@@ -1327,45 +1916,46 @@ function updateHorse(dt, time) {
       }
       L.y = lerp(L.y, _kf[0] * k, jW); L.z = lerp(L.z, _kf[1] * k, jW); L.flex = lerp(L.flex, _kf[2], jW);
     }
-    if (p < L.prevP - 0.5 && refV > 0.25 && !(J && J.state !== 'land')) {
-      L.hoof.getWorldPosition(hw);
-      const strength = clamp(st.speed / SM / 9.5, 0, 1);
-      if (st.speed / SM > 2.5) dust.spawn(hw, Math.round(2 + strength * 6), (0.4 + strength) * B.S);
-      hoofSound((0.25 + strength * 0.75) * (0.55 + 0.45 * B.S), i % 2 === 0 ? -0.25 : 0.25);
+    // follow the ground under each hoof
+    if (!airborne) {
+      const lx = L.x * S, lz = (L.nz + L.z) * S;
+      L.y += (groundH(s.x + cy * lx + sy * lz, s.z - sy * lx + cy * lz) - s.rootY) / S;
     }
-    L.prevP = p;
+    const inStance = p < G.d;
+    if (inStance && !L.prevSt && refV > 0.25 && !(J && J.state !== 'land')) footfall(R, s, L, i, ctl, refV, wg);
+    L.prevSt = inStance;
     L.root.rotation.x = -(L.front ? 0.55 : 0.45) * L.z / k - (L.front ? 0 : 0.12 * L.y / k);
   }
 
   // --- body motion
-  st.breath += dt * lerp(1.4, 3.5, clamp(refV / 9.5, 0, 1));
+  s.breath += dt * lerp(1.4, 3.5, clamp(refV / 9.5, 0, 1));
   const bobWalk = 0.016 * Math.cos(TAU * 2 * (ph - 0.12));
   const bobTrot = -0.045 * Math.cos(TAU * 2 * (ph - G.d / 2));
   const bobGal = 0.06 * Math.cos(TAU * (ph - 0.9)) - 0.05;
   const gw = 1 - jW; // fade the gait bounce while jumping
-  // jump pitch pivots around the middle of the barrel rather than the ground
-  const pc = 1.15;
-  body.position.y = H.lift + (ww * bobWalk + wt * bobTrot + wg * bobGal) * k * gw - jCrouch * k + pc * (1 - Math.cos(jPitch));
-  body.position.z = -pc * Math.sin(jPitch);
-  body.rotation.x = (wg * 0.07 * Math.sin(TAU * (ph - 0.25)) + ww * 0.008 * Math.sin(TAU * 2 * ph)) * gw + jPitch;
+  // jump and slope pitch pivot around the middle of the barrel rather than the ground
+  const pc = 1.15, tp = jPitch + s.slope;
+  body.position.y = R.lift + (ww * bobWalk + wt * bobTrot + wg * bobGal) * k * gw - jCrouch * k + pc * (1 - Math.cos(tp));
+  body.position.z = -pc * Math.sin(tp);
+  body.rotation.x = (wg * 0.07 * Math.sin(TAU * (ph - 0.25)) + ww * 0.008 * Math.sin(TAU * 2 * ph)) * gw + tp;
   body.rotation.z = ww * 0.012 * Math.sin(TAU * ph) + wt * 0.01 * Math.sin(TAU * ph);
-  body.scale.set(1 + 0.012 * Math.sin(st.breath), 1 + 0.006 * Math.sin(st.breath), 1);
+  body.scale.set(1 + 0.012 * Math.sin(s.breath), 1 + 0.006 * Math.sin(s.breath), 1);
 
   // --- IK legs
   horse.updateMatrixWorld(true);
   for (const L of legs) {
     tmp.set(L.x, (HOOF_H + PAST_V) * k + L.y, L.nz + L.z - PAST_Z * k).applyMatrix4(horse.matrixWorld);
     L.root.worldToLocal(tmp);
-    const R = L.joint.position;
-    let dy = tmp.y - R.y, dz = tmp.z - R.z;
+    const Rj = L.joint.position;
+    let dy = tmp.y - Rj.y, dz = tmp.z - Rj.z;
     const len = Math.hypot(dy, dz) || 1e-6;
     const D = clamp(len, Math.abs(L.a - L.b) + 1e-3, (L.a + L.b) * 0.999);
     dy *= D / len; dz *= D / len;
     const baseA = Math.atan2(-dz, -dy);
     const beta = Math.acos(clamp((L.a * L.a + D * D - L.b * L.b) / (2 * L.a * D), -1, 1));
     const a1 = baseA + L.bend * beta;
-    const jy = R.y - L.a * Math.cos(a1), jz = R.z - L.a * Math.sin(a1);
-    const a2w = Math.atan2(-(R.z + dz - jz), -(R.y + dy - jy));
+    const jy = Rj.y - L.a * Math.cos(a1), jz = Rj.z - L.a * Math.sin(a1);
+    const a2w = Math.atan2(-(Rj.z + dz - jz), -(Rj.y + dy - jy));
     L.joint.rotation.x = a1;
     L.knee.rotation.x = a2w - a1;
     const cannonWorld = body.rotation.x + L.root.rotation.x + a2w;
@@ -1374,14 +1964,14 @@ function updateHorse(dt, time) {
   }
 
   // --- head & neck
-  st.graze = damp(st.graze, idle > 6 ? 1 : 0, idle > 6 ? 0.8 : 3, dt);
-  const gz = st.graze;
+  s.graze = damp(s.graze, s.idle > 6 ? 1 : 0, s.idle > 6 ? 0.8 : 3, dt);
+  const gz = s.graze;
   const nod = ww * 0.06 * Math.sin(TAU * 2 * (ph - 0.1)) + wt * 0.015 * Math.sin(TAU * 2 * ph) + wg * 0.12 * Math.sin(TAU * (ph - 0.2));
   const grazeMove = gz * 0.04 * Math.sin(time * 0.7) * Math.sin(time * 0.31);
-  neck.rotation.x = 0.1 + wg * 0.14 + wt * 0.06 + nod * gw + gz * (B.graze ?? 1.05) + grazeMove + jNeck;
-  neck.rotation.y = st.turn * 0.22 + gz * 0.12 * Math.sin(time * 0.23);
-  head.rotation.x = 0.82 - wg * 0.18 + gz * 0.25 + 0.03 * Math.sin(time * 0.9) * (1 - clamp(st.speed, 0, 1));
-  head.rotation.y = st.turn * 0.15;
+  neck.rotation.x = 0.1 + wg * 0.14 + wt * 0.06 + nod * gw + gz * (B.graze ?? 1.05) + grazeMove + jNeck - s.slope * 0.5;
+  neck.rotation.y = s.turn * 0.22 + gz * 0.12 * Math.sin(time * 0.23);
+  head.rotation.x = 0.82 - wg * 0.18 + gz * 0.25 + 0.03 * Math.sin(time * 0.9) * (1 - clamp(aSpd, 0, 1));
+  head.rotation.y = s.turn * 0.15;
   head.rotation.z = gz * 0.05 * Math.sin(time * 4.5); // chewing wiggle
 
   // ears: forward when moving, random flicks when idle
@@ -1389,7 +1979,7 @@ function updateHorse(dt, time) {
     const u = e.userData;
     u.t -= dt;
     if (u.t < 0) { u.t = 1.5 + Math.random() * 4; u.target = (Math.random() - 0.3) * 0.7; }
-    const goal = st.speed > 0.5 ? -0.2 + (-st.turn * u.sx) * 0.2 : u.target;
+    const goal = aSpd > 0.5 ? -0.2 + (-s.turn * u.sx) * 0.2 : u.target;
     u.cur = damp(u.cur, goal, 5, dt);
     e.rotation.x = u.base + u.cur * 0.5;
     e.rotation.y = u.sx * (u.cur * 0.6 + 0.15);
@@ -1397,30 +1987,50 @@ function updateHorse(dt, time) {
   }
 
   // tail
-  st.swishT -= dt;
-  if (st.swishT < 0) { st.swishT = 3 + Math.random() * 6; st.swish = 0.35; }
-  st.swish = damp(st.swish, 0, 0.9, dt);
-  const run = clamp((st.speed / SM - 2) / 7, 0, 1);
+  s.swishT -= dt;
+  if (s.swishT < 0) { s.swishT = 3 + Math.random() * 6; s.swish = 0.35; }
+  s.swish = damp(s.swish, 0, 0.9, dt);
+  const run = clamp((aSpd / SM - 2) / 7, 0, 1);
   tailSegs.forEach((g, i) => {
     g.rotation.x = lerp(TAIL_REST[i], TAIL_RUN[i], run) + (i === 0 ? jTail : jTail * 0.3) + run * 0.06 * Math.sin(time * 13 - i * 0.8) + (wt + wg) * 0.04 * Math.sin(TAU * 2 * ph - i * 0.5);
-    g.rotation.z = (st.swish * 1.0 + 0.03) * Math.sin(time * 3.2 - i * 0.55) * (0.3 + i * 0.12) - st.turn * 0.05 * (i > 0 ? 1 : 0);
+    g.rotation.z = (s.swish * 1.0 + 0.03) * Math.sin(time * 3.2 - i * 0.55) * (0.3 + i * 0.12) - s.turn * 0.05 * (i > 0 ? 1 : 0);
   });
+
+  // snort after pulling up from a fast pace
+  s.fast = aSpd / SM > 3 ? 1 : s.fast;
+  if (s.fast && aSpd < 0.1) { s.fast = 0; if (ctl.vol > 0.05) snort(B, ctl.vol); }
+
+  if (R.rider) updateRider(R, s, { ww, wt, wg, ph, d: G.d, jW, J, aSpd, refV }, dt, time);
 }
+
+function footfall(R, s, L, i, ctl, refV, wg) {
+  L.hoof.getWorldPosition(hw);
+  const strength = clamp(refV / 9.5, 0, 1), S = R.B.S;
+  const wet = inWater(hw.x, hw.z);
+  if (wet) { if (ctl.player) { splash.spawn(hw, Math.round(3 + strength * 8), 0.8 + strength); splashSound(0.4 + strength * 0.6); } return; }
+  if (refV > 2.5) dust.spawn(hw, Math.round(2 + strength * 6), (0.4 + strength) * S);
+  hoofSound((0.25 + strength * 0.75) * (0.55 + 0.45 * S) * ctl.vol, i % 2 === 0 ? -0.25 : 0.25);
+  if (ctl.player) {
+    addHoofprint(hw.x, hw.z, s.yaw, S);
+    if (wg > 0.5 && i === 0) breathHuff(R.B);
+  }
+}
+
 
 // ---------------------------------------------------------------- camera
 const camState = { yaw: 0, pos: new V3(0, 2.5, -7), look: new V3() };
 function updateCamera(dt, time) {
-  if (!dragging && time - lastDrag > 2.5 && st.speed > 0.3) camYawOff = damp(camYawOff, 0, 0.8, dt);
+  if (!dragging && time - lastDrag > 2.5 && Math.abs(st.speed) > 0.3) camYawOff = damp(camYawOff, 0, 0.8, dt);
   let d = st.yaw + camYawOff - camState.yaw;
   d = Math.atan2(Math.sin(d), Math.cos(d));
   camState.yaw += d * (1 - Math.exp(-(dragging ? 20 : 3) * dt));
-  const tgt = new V3(st.x, (1.25 - 0.3 * st.graze) * H.B.S * (0.6 + 0.4 * H.B.k) + (st.jump ? st.jump.y * 0.6 : 0), st.z);
-  const dist = camDist * (1 + clamp(st.speed / 9.5, 0, 1) * 0.15) * (0.45 + 0.55 * H.B.S);
+  const tgt = new V3(st.x, lerp(groundH(st.x, st.z), st.rootY, 0.6) + (1.25 - 0.3 * st.graze) * H.B.S * (0.6 + 0.4 * H.B.k), st.z);
+  const dist = camDist * (1 + clamp(Math.abs(st.speed) / 9.5, 0, 1) * 0.15) * (0.45 + 0.55 * H.B.S);
   const want = new V3(
     tgt.x - Math.sin(camState.yaw) * Math.cos(camPitch) * dist,
     tgt.y + Math.sin(camPitch) * dist,
     tgt.z - Math.cos(camState.yaw) * Math.cos(camPitch) * dist);
-  want.y = Math.max(want.y, 0.3);
+  want.y = Math.max(want.y, groundH(want.x, want.z) + 0.5);
   camState.pos.lerp(want, 1 - Math.exp(-10 * dt));
   camState.look.lerp(tgt, 1 - Math.exp(-12 * dt));
   camera.position.copy(camState.pos);
@@ -1428,8 +2038,8 @@ function updateCamera(dt, time) {
   camera.lookAt(camState.look);
 
   // shadow + grass follow
-  sun.position.set(st.x, 0, st.z).addScaledVector(sunDir, 40);
-  sun.target.position.set(st.x, 0, st.z);
+  sun.position.set(st.x, st.rootY, st.z).addScaledVector(sunDir, 40);
+  sun.target.position.set(st.x, st.rootY, st.z);
   const fwd = new V3().subVectors(camState.look, camState.pos).setY(0).normalize();
   grass.material.uniforms.uCenter.value.set(st.x + fwd.x * 14, 0, st.z + fwd.z * 14);
   grass.material.uniforms.uHorse.value.set(st.x, 0, st.z);
@@ -1437,18 +2047,347 @@ function updateCamera(dt, time) {
   sky.position.copy(camera.position);
 }
 
+// ---------------------------------------------------------------- stride meter: where to take off for the next fence
+const strideEl = document.getElementById('stride'), strideZone = strideEl.querySelector('.zone'), strideMark = strideEl.querySelector('.mark'), strideLbl = strideEl.querySelector('.lbl');
+const STRIDE_RANGE = 18;
+const winCache = new Map();
+// distances (horse centre to fence centre line, metres) where pressing jump clears this fence cleanly
+function jumpWindow(f, v) {
+  const B = H.B, key = `${fences.indexOf(f)}|${Math.round(v * 4)}|${breedIdx}|${f.h.toFixed(2)}`;
+  if (winCache.has(key)) return winCache.get(key);
+  const S = B.S, hJ = jumpHeight(B, v);
+  const vy0 = Math.sqrt(2 * GRAV * hJ), T = 2 * vy0 / GRAV, vm = Math.max(v, 2.4 * B.speed);
+  const tuck = 0.3 * S * B.k, D = f.D + 0.3 * S * B.bodyW, offs = [0.95 * S, 0, -0.85 * S];
+  const ranges = []; let cur = null;
+  for (let d0 = 0.3; d0 <= STRIDE_RANGE; d0 += 0.1) {
+    let ok = true;
+    const tEnd = (d0 + D + 0.85 * S + 0.1) / vm;               // until the hindquarters are past the fence
+    for (let t = 0; ok && t <= tEnd; t += 0.01) {
+      const ta = t - PREP_T, clr = ta > 0 && ta < T ? vy0 * ta - 0.5 * GRAV * ta * ta + tuck : 0;
+      for (const o of offs) { const pos = -d0 + vm * t + o; if (Math.abs(pos) < D && clr < f.h) { ok = false; break; } }
+    }
+    if (ok) { if (!cur) cur = [d0, d0]; else cur[1] = d0; } else if (cur) { ranges.push(cur); cur = null; }
+  }
+  if (cur) ranges.push(cur);
+  let best = ranges.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]))[0] ?? null;
+  // keep a safety margin at both ends so "Jump now!" never means a rail down
+  if (best) { const m = Math.min(0.35, (best[1] - best[0]) * 0.25); best = [best[0] + m, best[1] - m]; }
+  winCache.set(key, best);
+  return best;
+}
+function updateStride() {
+  let show = false;
+  if (H && st.stun <= 0 && st.speed > 1.5) {
+    const fx = Math.sin(st.yaw), fz = Math.cos(st.yaw);
+    let best = null, bestD = 1e9;
+    for (const f of fences) {
+      if (f.h < 0.05) continue;
+      const dx = st.x - f.x, dz = st.z - f.z;
+      const lz = dx * f.az.x + dz * f.az.z, lx = dx * f.ax.x + dz * f.ax.z;
+      const along = fx * f.az.x + fz * f.az.z;
+      if (Math.abs(along) < 0.75) continue;
+      const sg = Math.sign(along), dist = -sg * lz;
+      if (dist < 0.2 || dist > STRIDE_RANGE) continue;
+      const lxc = lx + (fx * f.ax.x + fz * f.ax.z) / Math.abs(along) * dist;
+      if (Math.abs(lxc) > f.L + 0.4) continue;
+      if (dist < bestD) { bestD = dist; best = f; }
+    }
+    if (best) {
+      show = true;
+      const w = jumpWindow(best, st.speed);
+      const pct = (d) => (1 - clamp(d, 0, STRIDE_RANGE) / STRIDE_RANGE) * 100;
+      if (w) { strideZone.style.left = pct(w[1]) + '%'; strideZone.style.width = (pct(w[0]) - pct(w[1])) + '%'; strideZone.hidden = false; }
+      else strideZone.hidden = true;
+      strideMark.style.left = pct(bestD) + '%';
+      const go = !!w && bestD >= w[0] && bestD <= w[1] && !st.jump;
+      strideEl.classList.toggle('go', go);
+      strideEl.classList.toggle('jumping', !!st.jump);
+      strideLbl.textContent = st.jump ? `Fence ${best.num}` : go ? 'Jump now!' : !w ? `Fence ${best.num}: too big at this pace` : bestD > w[1] ? `Fence ${best.num} · ${(bestD - w[1]).toFixed(1)} m to take-off` : `Fence ${best.num} · too close`;
+    }
+  }
+  strideEl.classList.toggle('show', show);
+}
+
+// ---------------------------------------------------------------- time of day and weather
+const TIMES = [
+  { name: 'Dawn', sun: [0.75, 0.2, 0.5], sunCol: 0xffc39a, sunI: 1.7, sky: 0xb7c3dc, gnd: 0x4f4d3e, hemiI: 0.75, top: 0x6f8fc4, hor: 0xf0cdb4, exp: 1.05, lum: 0.85 },
+  { name: 'Day', sun: [-0.45, 0.75, -0.5], sunCol: 0xfff1dd, sunI: 2.6, sky: 0xcfe3ff, gnd: 0x5b6a3c, hemiI: 1.1, top: 0x4f86cf, hor: 0xc9d6e0, exp: 1.0, lum: 1 },
+  { name: 'Golden hour', sun: [-0.72, 0.22, 0.45], sunCol: 0xffc576, sunI: 2.4, sky: 0xffdcb8, gnd: 0x5d5a38, hemiI: 0.8, top: 0x5a8bcf, hor: 0xf2d3a8, exp: 1.0, lum: 0.9 },
+  { name: 'Dusk', sun: [-0.8, 0.06, 0.2], sunCol: 0xff8a5a, sunI: 1.0, sky: 0x7a86b4, gnd: 0x3a3634, hemiI: 0.75, top: 0x2c3b66, hor: 0xc98a78, exp: 1.3, lum: 0.5 },
+];
+const WEATHERS = [
+  { name: 'Clear', cloud: 0, rain: 0, fog: 0, near: 40, far: 320 },
+  { name: 'Cloudy', cloud: 0.8, rain: 0, fog: 0, near: 35, far: 260 },
+  { name: 'Rain', cloud: 1, rain: 1, fog: 0.15, near: 18, far: 150 },
+  { name: 'Fog', cloud: 0.55, rain: 0, fog: 1, near: 3, far: 60 },
+];
+let timeIdx = 1, wxIdx = 0;
+const envCur = {}, envTgt = {};
+const C = (h) => new THREE.Color(h);
+function envTarget() {
+  const T = TIMES[timeIdx], W = WEATHERS[wxIdx];
+  const grey = C(0xaab0b5).multiplyScalar(T.lum * (1 - 0.25 * W.rain)), mist = C(0xd3d7d9).multiplyScalar(Math.max(0.35, T.lum));
+  return {
+    sun: new V3(...T.sun).normalize(), sunCol: C(T.sunCol), sunI: T.sunI * (1 - 0.82 * W.cloud),
+    sky: C(T.sky).lerp(grey, W.cloud * 0.6), gnd: C(T.gnd), hemiI: T.hemiI * (1 + 0.15 * W.cloud) * (1 - 0.2 * W.rain),
+    top: C(T.top).lerp(grey.clone().multiplyScalar(0.92), W.cloud * 0.85),
+    hor: C(T.hor).lerp(grey, W.cloud * 0.75).lerp(mist, W.fog),
+    exp: T.exp, near: W.near, far: W.far, rain: W.rain, wet: W.rain, birds: T.lum * (1 - 0.7 * W.rain),
+  };
+}
+function setEnv(t, w, instant) {
+  timeIdx = (t + TIMES.length) % TIMES.length; wxIdx = (w + WEATHERS.length) % WEATHERS.length;
+  Object.assign(envTgt, envTarget());
+  if (instant || !envCur.sun) for (const k in envTgt) envCur[k] = envTgt[k].clone ? envTgt[k].clone() : envTgt[k];
+  document.getElementById('timeBtn').textContent = TIMES[timeIdx].name;
+  document.getElementById('wxBtn').textContent = WEATHERS[wxIdx].name;
+}
+const LIGHT_REF = (() => { const T = TIMES[1]; return 0.42 * T.sunI * new V3(...T.sun).normalize().y + 0.55 * T.hemiI; })();
+function updateEnv(dt) {
+  const k = 1 - Math.exp(-1.3 * dt);
+  for (const key in envTgt) {
+    const a = envCur[key], b = envTgt[key];
+    if (a && a.isColor) a.lerp(b, k); else if (a && a.isVector3) a.lerp(b, k).normalize(); else envCur[key] = lerp(a, b, k);
+  }
+  const e = envCur;
+  sunDir.copy(e.sun);
+  sun.color.copy(e.sunCol); sun.intensity = e.sunI;
+  hemi.color.copy(e.sky); hemi.groundColor.copy(e.gnd); hemi.intensity = e.hemiI;
+  sky.material.uniforms.top.value.copy(e.top);
+  FOG.copy(e.hor); scene.fog.color.copy(FOG); scene.fog.near = e.near; scene.fog.far = e.far;
+  const gu = grass.material.uniforms; gu.fogNear.value = e.near; gu.fogFar.value = e.far;
+  renderer.toneMappingExposure = e.exp;
+  const li = (0.42 * e.sunI * Math.max(0.03, e.sun.y) + 0.55 * e.hemiI) / LIGHT_REF;
+  gu.uLight.value.copy(e.sky).lerp(e.sunCol, 0.5).multiplyScalar(li);
+  // wet ground: darker and a little shiny, with puddles on the track
+  groundMat.color.setScalar(lerp(1, 0.66, e.wet)); groundMat.roughness = lerp(1, 0.62, e.wet);
+  trackMat.color.set(0x9c8462).multiplyScalar(lerp(1, 0.62, e.wet)); trackMat.roughness = lerp(1, 0.4, e.wet);
+  puddleMat.opacity = 0.85 * clamp((e.wet - 0.3) / 0.7, 0, 1);
+  rainFx.mat.opacity = 0.55 * e.rain;
+  rainFx.lines.visible = e.rain > 0.02;
+}
+
+// rain streaks in a box that follows the camera
+const rainFx = (() => {
+  const N = 2600, BOX = 26, HGT = 16;
+  const pos = new Float32Array(N * 6), seed = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) { seed[i * 3] = Math.random() * BOX; seed[i * 3 + 1] = Math.random() * HGT; seed[i * 3 + 2] = Math.random() * BOX; }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.LineBasicMaterial({ color: 0xdfe6ee, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  const lines = new THREE.LineSegments(geo, mat); lines.frustumCulled = false; lines.visible = false; scene.add(lines);
+  let fall = 0;
+  return {
+    mat, lines,
+    update(dt) {
+      if (!lines.visible) return;
+      fall += dt * 11;
+      const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+      for (let i = 0; i < N; i++) {
+        const x = cx + ((seed[i * 3] - cx) % BOX + BOX) % BOX - BOX / 2, z = cz + ((seed[i * 3 + 2] - cz) % BOX + BOX) % BOX - BOX / 2;
+        const y = cy + (((seed[i * 3 + 1] - fall) % HGT) + HGT) % HGT - HGT / 2;
+        pos.set([x, y, z, x + 0.05, y + 0.45, z + 0.02], i * 6);
+      }
+      geo.attributes.position.needsUpdate = true;
+    },
+  };
+})();
+// puddles on the sand track
+const puddleMat = new THREE.MeshStandardMaterial({ color: 0x55605e, roughness: 0.04, metalness: 0.5, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+(() => {
+  for (let i = 0; i < 16; i++) {
+    const th = Math.random() * TAU;
+    if (fences.some(f => !f.xc && Math.hypot(f.x - (COURSE.cx + COURSE.rx * Math.cos(th)), f.z - (COURSE.cz + COURSE.rz * Math.sin(th))) < 5)) continue;
+    const off = (Math.random() - 0.5) * 3.5, x = COURSE.cx + (COURSE.rx + off) * Math.cos(th), z = COURSE.cz + (COURSE.rz + off) * Math.sin(th);
+    const g = new THREE.CircleGeometry(1, 20); const pa = g.attributes.position;
+    for (let k = 1; k < pa.count; k++) { const r = 0.7 + Math.random() * 0.5; pa.setXY(k, pa.getX(k) * r, pa.getY(k) * r); }
+    const m = new THREE.Mesh(g, puddleMat); m.rotation.x = -Math.PI / 2; m.rotation.z = Math.random() * TAU;
+    m.scale.set(0.8 + Math.random() * 1.3, 0.6 + Math.random() * 0.8, 1); m.position.set(x, 0.02, z); m.receiveShadow = true; scene.add(m);
+  }
+})();
+
+// ---------------------------------------------------------------- birds
+const birds = (() => {
+  const bodyGeo = new THREE.SphereGeometry(0.06, 8, 6).scale(0.75, 0.65, 1.5);
+  const wingGeo = (() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.05, 0.24, 0, -0.03, 0, 0, -0.07], 3)); g.computeVertexNormals(); return g; })();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x2f2a26, roughness: 0.8, side: THREE.DoubleSide });
+  const flocks = [];
+  const groundSpot = () => {
+    for (let i = 0; i < 50; i++) {
+      const a = Math.random() * TAU, r = 18 + Math.random() * 140, x = 10 + Math.cos(a) * r, z = 30 + Math.sin(a) * r;
+      if (!inWater(x, z) && bankMask(x, z) < 0.01 && !fences.some(f => Math.hypot(f.x - x, f.z - z) < 8)) return new V3(x, 0, z);
+    }
+    return new V3(60, 0, -20);
+  };
+  const mk = () => {
+    const g = new THREE.Group();
+    const b = new THREE.Mesh(bodyGeo, mat); b.castShadow = true; g.add(b);
+    const wl = new THREE.Mesh(wingGeo, mat), wr = new THREE.Mesh(wingGeo, mat); wr.scale.x = -1; g.add(wl, wr);
+    scene.add(g); return { g, wl, wr };
+  };
+  for (let f = 0; f < 7; f++) {
+    const home = groundSpot(), list = [];
+    for (let i = 0; i < 6 + Math.floor(Math.random() * 4); i++) {
+      const b = mk(); b.p = home.clone().add(new V3((Math.random() - 0.5) * 3, 0, (Math.random() - 0.5) * 3)); b.p.y = groundH(b.p.x, b.p.z);
+      b.v = new V3(); b.yaw = Math.random() * TAU; b.hop = Math.random() * 3; b.flap = Math.random() * 10; b.off = new V3((Math.random() - 0.5) * 3, 0, (Math.random() - 0.5) * 3);
+      list.push(b);
+    }
+    flocks.push({ birds: list, state: 'ground', home, target: null, t: 0 });
+  }
+  // a few birds soaring high over the fields
+  const soar = [0, 1, 2].map(i => ({ ...mk(), a: i * 2.1, r: 30 + i * 12, h: 22 + i * 5, c: new V3(20 - i * 30, 0, 40 + i * 20) }));
+  let chirpT = 2;
+  return {
+    flocks,
+    update(dt, time) {
+      for (const F of flocks) {
+        if (F.state === 'ground') {
+          const c = F.birds[0].p, d = Math.hypot(st.x - c.x, st.z - c.z);
+          if ((d < 10 && Math.abs(st.speed) > 1.2) || d < 3.5) {
+            F.state = 'fly'; F.t = 0; F.target = groundSpot();
+            const away = new V3(c.x - st.x, 0, c.z - st.z).normalize();
+            for (const b of F.birds) b.v.copy(away).multiplyScalar(3 + Math.random() * 2).add(new V3((Math.random() - 0.5) * 2, 3 + Math.random() * 2, (Math.random() - 0.5) * 2));
+            flutterSound(clamp(1 - d / 20, 0, 1) * 0.8, 0);
+          }
+          for (const b of F.birds) {
+            b.hop -= dt;
+            if (b.hop < 0) { b.hop = 0.6 + Math.random() * 2.5; b.yaw += (Math.random() - 0.5) * 2; b.peck = 0.3; b.p.x += Math.sin(b.yaw) * 0.12; b.p.z += Math.cos(b.yaw) * 0.12; }
+            b.peck = Math.max(0, (b.peck ?? 0) - dt);
+            b.p.y = groundH(b.p.x, b.p.z) + 0.045;
+            b.g.position.copy(b.p); b.g.rotation.set(b.peck > 0 ? 0.6 : 0, b.yaw, 0);
+            b.wl.rotation.z = 0.1; b.wr.rotation.z = -0.1;
+          }
+        } else {
+          F.t += dt;
+          let landed = 0;
+          for (const b of F.birds) {
+            const tgt = F.target.clone().add(b.off); tgt.y = groundH(tgt.x, tgt.z) + 0.045;
+            const toT = tgt.clone().sub(b.p), dist = Math.hypot(toT.x, toT.z);
+            const cruise = tgt.y + clamp(dist * 0.25, 0, 9);
+            const want = new V3(toT.x, 0, toT.z).normalize().multiplyScalar(dist > 4 ? 7 : dist * 1.5);
+            want.y = (cruise - b.p.y) * (dist > 6 ? 1.2 : 2.5);
+            b.v.lerp(want, 1 - Math.exp(-(F.t < 0.8 ? 0.6 : 2) * dt));
+            b.p.addScaledVector(b.v, dt);
+            if (dist < 0.3 && Math.abs(b.p.y - tgt.y) < 0.15) { b.p.copy(tgt); landed++; }
+            b.flap += dt * (b.v.y > 0.3 || F.t < 1.2 ? 26 : 14 * (Math.sin(time * 0.9 + b.off.x) > 0 ? 1 : 0.1));
+            b.g.position.copy(b.p); b.yaw = Math.atan2(b.v.x, b.v.z);
+            b.g.rotation.set(-Math.atan2(b.v.y, Math.hypot(b.v.x, b.v.z)) * 0.6, b.yaw, 0);
+            b.wl.rotation.z = Math.sin(b.flap) * 0.9; b.wr.rotation.z = -Math.sin(b.flap) * 0.9;
+          }
+          if (landed === F.birds.length || F.t > 30) { F.state = 'ground'; F.home = F.target; }
+        }
+      }
+      for (const b of soar) {
+        b.a += dt * 0.12 * 30 / b.r;
+        b.g.position.set(b.c.x + Math.cos(b.a) * b.r, b.h + Math.sin(time * 0.3 + b.r) * 2, b.c.z + Math.sin(b.a) * b.r);
+        b.g.rotation.set(0, -b.a, -0.35); b.wl.rotation.z = 0.15 + Math.sin(time * 2 + b.r) * 0.08; b.wr.rotation.z = -b.wl.rotation.z;
+      }
+      // birdsong from the nearest flocks on the ground
+      chirpT -= dt;
+      if (chirpT < 0) {
+        chirpT = 1.2 + Math.random() * 4;
+        const F = flocks[Math.floor(Math.random() * flocks.length)], c = F.birds[0].p, d = camera.position.distanceTo(c);
+        if (F.state === 'ground' && d < 70) chirp((1 - d / 70) * envCur.birds, panOf(c));
+      }
+    },
+  };
+})();
+function panOf(p) {
+  const r = new V3().subVectors(p, camera.position).normalize();
+  const right = new V3().setFromMatrixColumn(camera.matrixWorld, 0);
+  return clamp(r.dot(right), -1, 1) * 0.8;
+}
+
+// ---------------------------------------------------------------- loose horses grazing in the meadow
+const herd = [1, 3, 4].map((bi, i) => {
+  const B = BREEDS[bi], R = buildHorse(B, { rider: false });
+  const a = i * 2.1, s = newRigState(MEADOW.x + Math.cos(a) * 8, MEADOW.z + Math.sin(a) * 8, Math.random() * TAU);
+  s.idle = 10; s.graze = 1;
+  scene.add(R.root);
+  const cols = [{ type: 'horse', x: 0, z: 0, r: 0.55 * B.S, h: Infinity }, { type: 'horse', x: 0, z: 0, r: 0.55 * B.S, h: Infinity }];
+  colliders.push(...cols);
+  return { R, s, cols, mode: 'graze', timer: 4 + Math.random() * 10, tx: 0, tz: 0, callT: 20 + Math.random() * 40 };
+});
+function updateHerd(dt, time) {
+  for (const h of herd) {
+    const { R, s } = h, B = R.B;
+    h.timer -= dt;
+    if (h.mode === 'graze' && h.timer < 0) {
+      h.mode = 'walk'; const a = Math.random() * TAU, r = Math.random() * (MEADOW.r - 5);
+      h.tx = MEADOW.x + Math.cos(a) * r; h.tz = MEADOW.z + Math.sin(a) * r; h.timer = 25;
+    }
+    let target = 0, turnIn = 0;
+    if (h.mode === 'walk') {
+      const dx = h.tx - s.x, dz = h.tz - s.z, d = Math.hypot(dx, dz);
+      let diff = Math.atan2(dx, dz) - s.yaw; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      turnIn = clamp(diff * 1.5, -1, 1); target = Math.abs(diff) > 1.2 ? 0.4 : 1.7 * B.speed;
+      if (d < 1.5 || h.timer < 0) { h.mode = 'graze'; h.timer = 10 + Math.random() * 20; }
+    }
+    const dCam = camera.position.distanceTo(R.root.position);
+    updateRig(R, s, { target, turnIn, player: false, vol: clamp(1 - dCam / 45, 0, 1) * 0.6 }, dt, time);
+    const fx = Math.sin(s.yaw) * 0.45 * B.S, fz = Math.cos(s.yaw) * 0.45 * B.S;
+    h.cols[0].x = s.x + fx; h.cols[0].z = s.z + fz; h.cols[1].x = s.x - fx; h.cols[1].z = s.z - fz;
+    h.callT -= dt;
+    if (h.callT < 0) { h.callT = 40 + Math.random() * 60; if (dCam < 60) neigh(B, clamp(1 - dCam / 60, 0, 1) * 0.5, panOf(R.root.position)); }
+  }
+}
+// a loose horse may answer when yours calls out
+function answerNeigh() {
+  const h = herd.reduce((a, b) => camera.position.distanceTo(a.R.root.position) < camera.position.distanceTo(b.R.root.position) ? a : b);
+  const d = camera.position.distanceTo(h.R.root.position);
+  if (d < 90 && Math.random() < 0.6) setTimeout(() => neigh(h.R.B, clamp(1 - d / 90, 0.1, 1) * 0.45, panOf(h.R.root.position)), 1300 + Math.random() * 900);
+}
+
+function updateWorld(dt, time) {
+  updateEnv(dt);
+  rainFx.update(dt);
+  birds.update(dt, time);
+  updateHerd(dt, time);
+  updateStride();
+}
+
+// ---------------------------------------------------------------- touch controls
+(() => {
+  const enable = () => document.body.classList.add('touch');
+  if (matchMedia('(pointer: coarse)').matches) enable();
+  addEventListener('touchstart', enable, { once: true, passive: true });
+  for (const b of document.querySelectorAll('#touch button')) {
+    const k = b.dataset.k, act = b.dataset.act;
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('down');
+      initAudio(); startEl.classList.add('gone'); st.idle = 0;
+      if (k) keys[k] = true;
+      if (act === 'up' && st.stun <= 0) setGait(gait + 1);
+      if (act === 'down') setGait(gait - 1);
+      if (act === 'jump') startJump();
+    });
+    const up = () => { b.classList.remove('down'); if (k) keys[k] = false; };
+    b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
+  }
+})();
+
 // ---------------------------------------------------------------- loop
+st = newRigState();
+setEnv(1, 0, true);
+document.getElementById('timeBtn').addEventListener('click', (e) => { setEnv(timeIdx + 1, wxIdx); e.currentTarget.blur(); });
+document.getElementById('wxBtn').addEventListener('click', (e) => { setEnv(timeIdx, wxIdx + 1); e.currentTarget.blur(); });
 setBreed(0);
 updateScore();
 placeAtStart();
+st.rootY = groundH(st.x, st.z);
+function stepWorld(dt, time) {
+  updateRig(H, st, playerControl(), dt, time);
+  updateWorld(dt, time);
+  updateRails(dt);
+  updateCamera(dt, time);
+  dust.update(dt); splash.update(dt);
+  prints.update(time, envCur.wet);
+  updateAmbientAudio(dt, Math.abs(st.speed), envCur.rain);
+}
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const time = clock.elapsedTime;
-  updateHorse(dt, time);
-  updateRails(dt);
-  updateCamera(dt, time);
-  dust.update(dt);
-  hudS.innerHTML = `${(st.speed * 3.6).toFixed(0)}<small>km/h</small>`;
+  stepWorld(dt, time);
+  hudS.innerHTML = `${(Math.abs(st.speed) * 3.6).toFixed(0)}<small>km/h</small>`;
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -1457,12 +2396,12 @@ frame();
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
-  dust.mat.uniforms.uScale.value = innerHeight;
+  dust.mat.uniforms.uScale.value = splash.mat.uniforms.uScale.value = innerHeight;
 });
 
 // debug hooks
 let simT = 1000;
-window.__horse = { st, setGait, setBreed, startJump, fences, colliders, resetCourse, score, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) { simT += dt; updateHorse(dt, simT); updateRails(dt); dust.update(dt); updateCamera(dt, simT); } renderer.render(scene, camera); }, camera, scene, get H() { return H; }, setCam: (yawOff, pitch, dist) => { camYawOff = yawOff; camPitch = pitch; camDist = dist; lastDrag = 1e9; } };
+window.__horse = { get st() { return st; }, groundH, setEnv, herd, birds, setGait, setBreed, startJump, fences, colliders, resetCourse, score, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) { simT += dt; stepWorld(dt, simT); } renderer.render(scene, camera); }, camera, scene, get H() { return H; }, setCam: (yawOff, pitch, dist) => { camYawOff = yawOff; camPitch = pitch; camDist = dist; lastDrag = 1e9; } };
 </script>
 </body>
 </html>
