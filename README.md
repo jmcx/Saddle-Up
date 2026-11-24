@@ -22,10 +22,11 @@ Then go to http://localhost:8765.
 
 | Key | Action |
 |---|---|
-| ↑ / ↓ | Change gait: rein back, halt, walk, trot, gallop (↓ at a halt steps backwards) |
-| ← / → | Steer |
+| ↑ / ↓ | Riding: change gait: rein back, halt, walk, trot, gallop (↓ at a halt steps backwards) |
+| ← / → | Riding: steer |
+| Arrow keys on foot | Hold ↑ to walk forward (tap ↑ twice to run), hold ↓ to step back, ← → turn on the spot |
 | Space | Jump |
-| E | Get off and lead your horse on foot, get back on, or take the lead of the horse you're standing by |
+| E | Get off and lead your horse on foot, get back on, or take the lead of the horse you're standing by (works on the move: the horse pulls up) |
 | Q | Let go of the lead and leave the horse where it stands |
 | P | Switch rider: Mélienette or Nanou |
 | 1–5 | Fetch one of the five horses straight away (the one you had goes back to its box) |
@@ -84,9 +85,10 @@ There's hay in the open boxes, in loose piles around the yard and in a round bal
 
 ## On foot
 
-- **Get off (E)** at a halt and your rider hops down and leads the horse by the reins from its left shoulder. You can walk or trot alongside, but not jump. The stirrups are run up while nobody's riding.
-- **Let go (Q)** and the horse stays where you left it. It grazes, or eats any hay it can reach.
-- **Walk around on your own** with the arrow keys: walk, run or step back.
+- **Get off (E)** at any pace and the horse pulls up while your rider hops down and leads the horse by the reins from its left shoulder. You can walk or jog alongside, but not jump. The stirrups are run up while nobody's riding.
+- **Let go (Q)**, even while you're walking or jogging, and the horse stops and stays where you left it. It grazes, or eats any hay it can reach.
+- **Walk around on your own:** hold ↑ to walk forward and ↓ to step back; let go to stop. Tap ↑ twice quickly to run. ← and → turn you on the spot (or steer while you walk).
+- **Leading works the same way:** hold ↑ and the horse walks on with you, ↓ backs it up, ← → turn you both. A double-tap on ↑ makes you both jog.
 - **Take a lead (E):** walk up to any of the five horses (in its box, or wherever you left it) and press E to take its lead. The first step is always to hold the lead; then press E again to get on.
 - The number keys 1–5 are a shortcut: the horse you pick comes straight to you, and the one you had goes back to its box.
 - Resetting the course (R) puts you back in the saddle.

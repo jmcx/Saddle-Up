@@ -134,7 +134,7 @@
 </div>
 <div id="start"><div><b>Saddle Up</b><em>Click or tap to ride</em><span>↑ ↓ gait · ← → steer · Space jump · E get off · Q let go · 1–5 horse · C course · T time · Y weather · U auto weather</span></div></div>
 <div id="help">
-  <kbd>↑</kbd> <kbd>↓</kbd> change gait &nbsp;·&nbsp; <kbd>←</kbd> <kbd>→</kbd> steer<br>
+  <kbd>↑</kbd> <kbd>↓</kbd> change gait &nbsp;·&nbsp; <kbd>←</kbd> <kbd>→</kbd> steer &nbsp;·&nbsp; on foot: hold ↑ to walk, tap ↑ twice to run<br>
   <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>E</kbd> get off / on / take lead &nbsp;·&nbsp; <kbd>Q</kbd> let go<br><kbd>P</kbd> rider &nbsp;·&nbsp; <kbd>C</kbd> course &nbsp;·&nbsp; <kbd>R</kbd> reset<br>
   <kbd>T</kbd> time of day &nbsp;·&nbsp; <kbd>Y</kbd> weather &nbsp;·&nbsp; <kbd>U</kbd> auto weather<br> drag to orbit &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; <kbd>M</kbd> sound on/off
 </div>
@@ -2106,7 +2106,8 @@ addEventListener('keydown', (e) => {
   initAudio();
   if (st) st.idle = 0;
   if (!e.repeat) {
-    if ((k === 'ArrowUp' || k === 'w' || k === 'W') && st && st.stun <= 0) setGait(gait + 1);
+    if (onFoot()) dirTap(k);
+    else if ((k === 'ArrowUp' || k === 'w' || k === 'W') && st && st.stun <= 0) setGait(gait + 1);
     if (k === 'r' || k === 'R') resetCourse();
     if (k === 'c' || k === 'C') setCourse(courseIdx + 1);
     if (k === 'e' || k === 'E') actionE();
@@ -2115,14 +2116,14 @@ addEventListener('keydown', (e) => {
     if (k === 't' || k === 'T') setEnv(timeIdx + 1, wxIdx);
     if (k === 'y' || k === 'Y') pickWeather(wxIdx + 1);
     if (k === 'u' || k === 'U') { setWeatherAuto(!wxAuto); toast(wxAuto ? 'Auto weather on' : 'Manual weather: press Y to choose', 'info'); }
-    if (k === 'ArrowDown' || k === 's' || k === 'S') setGait(gait - 1);
+    if ((k === 'ArrowDown' || k === 's' || k === 'S') && !onFoot()) setGait(gait - 1);
     if (k === ' ') spacePress();
     if (k === 'm' || k === 'M') setMuted(!muted);
     if (k >= '1' && k <= String(BREEDS.length)) switchToHorse(+k - 1);
   }
   keys[k] = true;
 });
-addEventListener('keyup', (e) => { keys[e.key] = false; if (e.key === ' ') spaceRelease(); });
+addEventListener('keyup', (e) => { keys[e.key] = false; if (e.key === ' ') spaceRelease(); if (DIR_NAME[e.key]) dirReleased(); });
 const startEl = document.getElementById('start');
 const dismissStart = () => { startEl.classList.add('gone'); initAudio(); window.focus(); };
 startEl.addEventListener('pointerdown', dismissStart);
@@ -3000,7 +3001,28 @@ function updateStableHorses(dt, time) {
 }
 
 // ---------------------------------------------------------------- you: riding, leading, or on foot
-const PERSON_SPEED = [-0.8, 0, 1.4, 3.6];          // back, stop, walk, run (m/s)
+// On foot you move only while a key is held: ↑ walks forward (tap it twice to run), ↓ steps back,
+// ← → turn you on the spot. (Riding keeps the gait-by-gait controls.)
+const FOOT_WALK = 1.55, FOOT_RUN = 3.6;           // m/s on your own
+const LEAD_WALK = 1.1, LEAD_RUN = 4.2 / 1.7;      // multiples of the horse's walk when leading (a jog-trot when running)
+const FOOT_BACK = 0.9;                            // m/s stepping back
+const footInput = { run: false, lastKey: null, lastT: -1 };
+const DIR_NAME = { ArrowUp: 'ArrowUp', w: 'ArrowUp', W: 'ArrowUp', ArrowDown: 'ArrowDown', s: 'ArrowDown', S: 'ArrowDown',
+  ArrowLeft: 'ArrowLeft', a: 'ArrowLeft', A: 'ArrowLeft', ArrowRight: 'ArrowRight', d: 'ArrowRight', D: 'ArrowRight' };
+function footDir() {
+  const ix = ((keys.ArrowLeft || keys.a || keys.A) ? 1 : 0) - ((keys.ArrowRight || keys.d || keys.D) ? 1 : 0);
+  const iz = ((keys.ArrowUp || keys.w || keys.W) ? 1 : 0) - ((keys.ArrowDown || keys.s || keys.S) ? 1 : 0);
+  return { ix, iz };
+}
+// a quick second tap on ↑ breaks into a run
+function dirTap(key) {
+  const k = DIR_NAME[key]; if (k !== 'ArrowUp') return;
+  const now = performance.now() / 1000;
+  if (k === footInput.lastKey && now - footInput.lastT < 0.35) footInput.run = true;
+  footInput.lastKey = k; footInput.lastT = now;
+}
+function dirReleased() { if (footDir().iz <= 0) footInput.run = false; }
+
 const leading = () => !!player && player.horse && player.mode !== 'ride';
 function setPerson(i) {
   personIdx = (i + PERSONS.length) % PERSONS.length;
@@ -3040,17 +3062,23 @@ function actionE() {
     return;
   }
   if (P.mode !== 'ride' && P.mode !== 'lead') return;
-  if (Math.abs(st.speed) > 0.3 || st.jump || st.rear || st.stun > 0) { toast(P.mode === 'ride' ? 'Halt first to get off' : 'Halt first to get on', 'info'); return; }
-  setGait(0);
+  if (st.jump) { pendingAction = actionE; return; }    // mid-jump: do it as soon as you land
+  brakeHorse();
   if (P.mode === 'ride') H.root.attach(P.group);
   P.mode = P.mode === 'ride' ? 'toLead' : 'toRide'; P.tr = 0;
   onModeChanged();
 }
 // Q: let go of the lead and leave the horse where it stands
+// getting on, off or letting go also stops the horse: it pulls up within a stride
+let pendingAction = null;
+function brakeHorse() {
+  setGait(0); st.rear = null;
+  st.speed = clamp(st.speed, -0.6, 1.2);
+}
 function letGo() {
   const P = player;
   if (P.mode !== 'lead') { if (P.mode === 'ride') toast('Get off first (E), then let go (Q)', 'info'); return; }
-  if (Math.abs(st.speed) > 0.3) { toast('Halt first to let go', 'info'); return; }
+  brakeHorse();
   P.group.getWorldPosition(_w1);
   scene.attach(P.group);
   P.x = _w1.x; P.z = _w1.z; P.yaw = st.yaw; P.speed = 0; P.horse = null; P.mode = 'free';
@@ -3068,10 +3096,10 @@ function takeLead(h) {
 function updatePerson(dt, time) {
   const P = player;
   if (P.mode === 'free') {
-    const tIn = ((keys.ArrowLeft || keys.a || keys.A) ? 1 : 0) - ((keys.ArrowRight || keys.d || keys.D) ? 1 : 0);
-    const target = PERSON_SPEED[clamp(gait, -1, 2) + 1];
-    P.speed = P.speed < target ? Math.min(target, P.speed + 4 * dt) : Math.max(target, P.speed - 6 * dt);
-    P.turn = damp(P.turn, tIn, 8, dt);
+    const { ix, iz } = footDir();
+    const target = iz > 0 ? (footInput.run ? FOOT_RUN : FOOT_WALK) : iz < 0 ? -FOOT_BACK : 0;
+    P.speed = P.speed < target ? Math.min(target, P.speed + 5 * dt) : Math.max(target, P.speed - 7 * dt);
+    P.turn = damp(P.turn, ix, 10, dt);
     P.yaw += P.turn * (Math.abs(P.speed) > 2 ? 1.8 : 2.4) * dt;
     P.x += Math.sin(P.yaw) * P.speed * dt; P.z += Math.cos(P.yaw) * P.speed * dt;
     collidePerson(P);
@@ -3148,7 +3176,20 @@ function onModeChanged() {
 function playerControl() {
   const tIn = ((keys.ArrowLeft || keys.a || keys.A) ? 1 : 0) - ((keys.ArrowRight || keys.d || keys.D) ? 1 : 0);
   const busy = !player.horse || player.horse !== H || player.mode === 'toLead' || player.mode === 'toRide';   // a horse nobody's holding stands still
-  return { target: busy ? 0 : gaitSpeed(gait) * H.B.speed, turnIn: busy ? 0 : tIn, player: true, vol: 1, rearHeld: spaceHold.down };
+  if (busy) return { target: 0, turnIn: 0, player: true, vol: 1, rearHeld: spaceHold.down };
+  if (player.mode === 'lead') {
+    // leading: the horse walks on while ↑ is held, backs up on ↓, and ← → turn you both
+    const { ix, iz } = footDir(), walk = GAIT_SPEED[1] * H.B.speed;
+    const target = iz > 0 ? walk * (footInput.run ? LEAD_RUN : LEAD_WALK) : iz < 0 ? gaitSpeed(-1) * H.B.speed : 0;
+    return { target, turnIn: ix, player: true, vol: 1, rearHeld: spaceHold.down };
+  }
+  return { target: gaitSpeed(gait) * H.B.speed, turnIn: tIn, player: true, vol: 1, rearHeld: spaceHold.down };
+}
+// on foot, the gait display just shows what you're doing
+function syncFootGait() {
+  if (!onFoot()) return;
+  const iz = footDir().iz, want = iz > 0 ? (footInput.run ? 2 : 1) : iz < 0 ? -1 : 0;
+  if (want !== gait) setGait(want);
 }
 // what the camera follows: you on foot, otherwise your horse
 function camFocus() {
@@ -3209,12 +3250,13 @@ function updateWorld(dt, time) {
     b.addEventListener('pointerdown', (e) => {
       e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('down');
       initAudio(); startEl.classList.add('gone'); st.idle = 0;
-      if (k) keys[k] = true;
-      if (act === 'up' && st.stun <= 0) setGait(gait + 1);
-      if (act === 'down') setGait(gait - 1);
+      const dk = k || (onFoot() && act === 'up' ? 'ArrowUp' : onFoot() && act === 'down' ? 'ArrowDown' : null);
+      if (dk) { keys[dk] = true; b.dataset.held = dk; if (onFoot()) dirTap(dk); }
+      else if (act === 'up' && st.stun <= 0) setGait(gait + 1);
+      else if (act === 'down') setGait(gait - 1);
       if (act === 'jump') spacePress();
     });
-    const up = () => { b.classList.remove('down'); if (k) keys[k] = false; if (act === 'jump') spaceRelease(); };
+    const up = () => { b.classList.remove('down'); if (b.dataset.held) { keys[b.dataset.held] = false; delete b.dataset.held; dirReleased(); } if (act === 'jump') spaceRelease(); };
     b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
   }
 })();
@@ -3237,9 +3279,11 @@ placeAtStart();
 st.rootY = groundH(st.x, st.z);
 function stepWorld(dt, time) {
   updateSpaceHold(dt);
+  if (pendingAction && !st.jump) { const a = pendingAction; pendingAction = null; a(); }
   if (player.horse) updatePlayerEating(); else autoEat(horseOf(H));
   updateRig(H, st, playerControl(), dt, time);
   updatePerson(dt, time);
+  syncFootGait();
   updateStableHorses(dt, time);
   updateWorld(dt, time);
   updateRails(dt);
