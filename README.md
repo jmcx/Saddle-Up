@@ -6,7 +6,9 @@ Ride one of five mounts around a ten-fence course. Time your jumps to go clear: 
 
 ## Play
 
-Open `index.html` in a modern browser. Three.js loads from the jsDelivr CDN, so you need an internet connection.
+**Play online: https://jmcx.github.io/Saddle-Up/**
+
+To run it locally, open `index.html` in a modern browser. Three.js loads from the jsDelivr CDN, so you need an internet connection.
 
 If your browser blocks the page when it's opened straight from disk, serve the folder locally:
 
