@@ -2,7 +2,7 @@
 
 A 3D horse-riding and show-jumping game in a single HTML file, built with [three.js](https://threejs.org/).
 
-Ride one of five mounts around a ten-fence show-jumping arena, then head out over rolling hills to a cross-country course with a bank and a water jump. Time your jumps to go clear: run into a fence, rock or tree and your horse stops dead.
+Ride one of five mounts around a ten-fence show-jumping arena or a smaller pony arena, then head out over rolling hills to a cross-country course with a bank and a water jump. Time your jumps to go clear: run into a fence, rock or tree and your horse stops dead.
 
 ## Play
 
@@ -27,7 +27,9 @@ Then go to http://localhost:8765.
 | Space | Jump |
 | 1–5 | Change mount |
 | T | Time of day: dawn, day, golden hour, dusk |
-| Y | Weather: clear, cloudy, rain, fog |
+| Y | Pick the weather: clear, cloudy, rain, fog (switches to manual weather) |
+| U | Auto weather on/off |
+| C | Change course: show-jumping arena, pony arena, cross-country |
 | R | Reset the course and score |
 | M | Sound on/off |
 | Drag / scroll | Orbit and zoom the camera |
@@ -55,6 +57,14 @@ Smaller mounts take quicker, shorter strides and jump lower, so the ponies and t
 - Too early, too late or no jump at all: you crash or refuse, and the horse stops.
 - Knocked rails go back up a few seconds after you ride away.
 
+## Pony arena
+
+South of the main arena is a smaller arena with eight low fences (P1–P8, 0.4–0.5 m) for the ponies: a crossrail, verticals, two narrow oxers, a log, a wall and a hedge. They sit four down each long side, so the turns at the ends are clear.
+
+The fences are about 16–17 m apart, which leaves time to land, settle and line up for the next one. They're sized so even the Shetland can clear every one at a full gallop. A Shetland, Welsh Pony, donkey and Thoroughbred each went clear round at a gallop in testing.
+
+Press C or the Course button to ride there. You start lined up in front of P1.
+
 ## Cross-country
 
 Ride east out of the arena to find nine cross-country obstacles (XC1–XC9) marked with red and white flags: logs, hedges, a stone wall, a table bank and a water jump. Ride with the red flag on your right.
@@ -63,6 +73,8 @@ Ride east out of the arena to find nine cross-country obstacles (XC1–XC9) mark
 - **Water:** jump the log into the pond. Wading slows the horse right down and throws up spray.
 
 ## The world
+
+- **Weather:** starts on auto, where a new kind of weather rolls in about every 3 minutes (2½–3½) and blends in over about 30 seconds. Clear and cloudy skies come up most often, then rain, then fog. Pick a weather with Y or the weather button and it switches to manual, so it stays as you set it. Press U or the Auto/Manual button to switch back.
 
 - **Rider:** sits a rising trot, folds forward over jumps, stays balanced when the horse pitches, and holds the reins to a bit and bridle.
 - **Hoofprints:** they stay in the sand track and fade after about 45 seconds.

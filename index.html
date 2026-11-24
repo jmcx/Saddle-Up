@@ -21,6 +21,12 @@
   .gaits span.on { background: #f1e3c8; color: #2a1d12; font-weight: 600; }
   #spd { margin-top: 10px; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
   #score { margin-top: 6px; font-size: 12.5px; }
+  #courseBtn {
+    display: block; margin-top: 8px; padding: 6px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 12.5px; color: #fff; text-align: left;
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18);
+  }
+  #courseBtn:hover { background: rgba(255,255,255,0.18); } #courseBtn:focus-visible { outline: 2px solid #f1e3c8; outline-offset: 2px; }
+  #courseBtn b { font-weight: 600; }
   #score .good { color: #a9e08f; } #score .bad { color: #ffab9a; }
   #toast {
     position: fixed; top: 92px; left: 50%; transform: translateX(-50%) translateY(-8px); pointer-events: none;
@@ -65,6 +71,9 @@
     border: 1px solid rgba(255,255,255,0.15); background: rgba(20,22,18,0.42); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   }
   #env button:hover { background: rgba(20,22,18,0.62); }
+  #env button.on { background: #f1e3c8; color: #2a1d12; }
+  #env button.on:hover { background: #fff1d6; }
+  @media (max-width: 600px) { #env .wl { display: none; } }
   #env button:focus-visible, #breeds button:focus-visible { outline: 2px solid #f1e3c8; outline-offset: 2px; }
   @media (max-width: 1050px) { #env { top: 74px; } }
   #stride { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); width: min(420px, calc(100vw - 32px)); opacity: 0; transition: opacity .2s; pointer-events: none; color: #fff; text-align: center; }
@@ -106,19 +115,20 @@
   <div class="gaits"><span data-g="-1">Back</span><span data-g="0">Halt</span><span data-g="1">Walk</span><span data-g="2">Trot</span><span data-g="3">Gallop</span></div>
   <div id="spd">0<small>km/h</small></div>
   <div id="score"></div>
+  <button id="courseBtn" title="Change course (C)">Course: <b>Show-jumping arena</b></button>
 </div>
 <div id="toast"></div>
-<div id="env"><button id="timeBtn" title="Time of day (T)">Day</button><button id="wxBtn" title="Weather (Y)">Clear</button></div>
+<div id="env"><button id="timeBtn" title="Time of day (T)">Day</button><button id="wxBtn" title="Weather (Y)">Clear</button><button id="wxAutoBtn" aria-pressed="true">Auto weather</button></div>
 <div id="stride" aria-hidden="true"><div class="lbl"></div><div class="bar"><div class="zone"></div><div class="mark"></div></div></div>
 <div id="touch">
   <div class="pad l"><button data-k="ArrowLeft" aria-label="Steer left">◀</button><button data-k="ArrowRight" aria-label="Steer right">▶</button></div>
   <div class="pad r"><div class="col"><button data-act="up" aria-label="Faster">▲</button><button data-act="down" aria-label="Slower">▼</button></div><button data-act="jump" class="jump">Jump</button></div>
 </div>
-<div id="start"><div><b>Saddle Up</b><em>Click or tap to ride</em><span>↑ ↓ gait · ← → steer · Space jump · 1–5 mount · T time · Y weather</span></div></div>
+<div id="start"><div><b>Saddle Up</b><em>Click or tap to ride</em><span>↑ ↓ gait · ← → steer · Space jump · 1–5 mount · C course · T time · Y weather · U auto weather</span></div></div>
 <div id="help">
   <kbd>↑</kbd> <kbd>↓</kbd> change gait &nbsp;·&nbsp; <kbd>←</kbd> <kbd>→</kbd> steer<br>
-  <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>R</kbd> reset course<br>
-  <kbd>T</kbd> time of day &nbsp;·&nbsp; <kbd>Y</kbd> weather<br> drag to orbit &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; <kbd>M</kbd> sound on/off
+  <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>C</kbd> change course &nbsp;·&nbsp; <kbd>R</kbd> reset<br>
+  <kbd>T</kbd> time of day &nbsp;·&nbsp; <kbd>Y</kbd> weather &nbsp;·&nbsp; <kbd>U</kbd> auto weather<br> drag to orbit &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; <kbd>M</kbd> sound on/off
 </div>
 
 <script type="module">
@@ -184,7 +194,12 @@ scene.add(sky);
 // ---------------------------------------------------------------- terrain
 // The show-jumping arena is an oval kept perfectly flat: centre (-30, 0), radii 30 (x) and 45 (z).
 const COURSE = { cx: -30, cz: 0, rx: 30, rz: 45 };
-const nearCourse = (x, z, m) => ((x - COURSE.cx) / (COURSE.rx + m)) ** 2 + ((z - COURSE.cz) / (COURSE.rz + m)) ** 2 < 1;
+// a smaller arena south of the main one, with fences sized for ponies
+const PONY_ARENA = { cx: -28, cz: -115, rx: 24, rz: 46 };
+const inOval = (C, x, z, m) => ((x - C.cx) / (C.rx + m)) ** 2 + ((z - C.cz) / (C.rz + m)) ** 2 < 1;
+const nearCourse = (x, z, m) => inOval(COURSE, x, z, m) || inOval(PONY_ARENA, x, z, m);
+// true on the sand track that runs around an arena's oval
+const onOvalTrack = (C, x, z) => Math.abs(Math.hypot((x - C.cx) / C.rx, (z - C.cz) / C.rz) - 1) * Math.min(C.rx, C.rz) < 3.2;
 const sstep = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
 
 // cross-country route east of the arena (az = direction of travel)
@@ -207,6 +222,7 @@ const FLATS = [
   ...XC_PLAN.map(p => ({ x: p.x, z: p.z, r: p.type === 'bank' ? 9 : 6 })),
   { x: POND.x, z: POND.z, r: 13 },
   { x: MEADOW.x, z: MEADOW.z, r: MEADOW.r },
+  { x: PONY_ARENA.cx, z: PONY_ARENA.cz, r: PONY_ARENA.rz + 8 },
 ];
 BANK.ax = new V3(Math.cos(BANK.ang), 0, -Math.sin(BANK.ang)); BANK.az = new V3(Math.sin(BANK.ang), 0, Math.cos(BANK.ang));
 
@@ -478,7 +494,7 @@ const looseRails = [];
     const f = {
       type, x, z, y: y0, ang, L: RAIL_HALF, D: 0.12, h: 0, base: h, rails: [], solid: false, group: g,
       ax: new V3(Math.cos(ang), 0, -Math.sin(ang)), az: new V3(Math.sin(ang), 0, Math.cos(ang)),
-      side: 0, faultT: 99, downT: 0, clipped: false, num: def.label ?? index + 1, xc: !!def.xc,
+      side: 0, faultT: 99, downT: 0, clipped: false, num: def.label ?? index + 1, xc: !!def.xc, course: def.course ?? 'main',
     };
     const toWorld = (lx, lz) => ({ x: x + f.ax.x * lx + f.az.x * lz, z: z + f.ax.z * lx + f.az.z * lz });
     const standards = (zs) => {
@@ -498,14 +514,16 @@ const looseRails = [];
     };
     if (type === 'crossrail') {
       standards([0]);
-      const t = Math.atan2(0.62, RAIL_HALF * 2);
-      rail(0.45, -0.05, t); rail(0.45, 0.05, -t); rail(0.12, -0.18);
+      const t = Math.atan2(h * 1.12, RAIL_HALF * 2), c = h * 0.82;
+      rail(c, -0.05, t); rail(c, 0.05, -t); rail(Math.min(0.12, h * 0.25), -0.18);
     } else if (type === 'vertical') {
       standards([0]);
-      rail(0.25, 0); rail(h * 0.6, 0); rail(h - RAIL_R, 0);
+      if (h >= 0.65) rail(0.25, 0);
+      rail(h * 0.55, 0); rail(h - RAIL_R, 0);
     } else if (type === 'oxer') {
-      standards([-0.45, 0.45]); f.D = 0.55;
-      rail(0.3, -0.45); rail(h - 0.12, -0.45); rail(h * 0.6, 0.45); rail(h - RAIL_R, 0.45);
+      const sp = def.spread ?? 0.45;
+      standards([-sp, sp]); f.D = sp + 0.1;
+      rail(Math.min(0.3, h * 0.45), -sp); rail(h - 0.1, -sp); rail(h * 0.6, sp); rail(h - RAIL_R, sp);
     } else if (type === 'log') {
       f.solid = true; f.D = h / 2; f.h = h;
       const log = shadow(new THREE.Mesh(new THREE.CylinderGeometry(h / 2, h / 2 * 1.05, 3.7, 20, 1, false), [bark, logEnd, logEnd]));
@@ -540,7 +558,7 @@ const looseRails = [];
     }
     // number board on the right-hand standard, facing the approach
     const board = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.32), numberMat(f.num));
-    board.position.set(-(RAIL_HALF + 0.45), 1.45, -0.05 - (f.type === 'oxer' ? 0.45 : f.D)); board.rotation.y = Math.PI; g.add(board);
+    board.position.set(-(RAIL_HALF + 0.45), 1.45, -0.05 - (f.type === 'oxer' ? f.D - 0.1 : f.D)); board.rotation.y = Math.PI; g.add(board);
     if (f.type === 'wall' || f.type === 'log' || f.type === 'hedge') {
       const post = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.3, 0.06), white)); post.position.set(-(RAIL_HALF + 0.45), 0.65, -f.D - 0.02); g.add(post);
     }
@@ -553,15 +571,22 @@ const looseRails = [];
     ['crossrail', 0.55], ['vertical', 0.8], ['oxer', 0.9], ['log', 0.7], ['vertical', 1.0],
     ['wall', 0.85], ['oxer', 1.0], ['hedge', 0.9], ['vertical', 1.1], ['oxer', 1.1],
   ];
-  plan.forEach(([type, h], i) => {
-    const th = 0.36 + i * (TAU - 0.5) / plan.length;
-    const x = COURSE.cx + COURSE.rx * Math.cos(th), z = COURSE.cz + COURSE.rz * Math.sin(th);
-    const tx = -COURSE.rx * Math.sin(th), tz = COURSE.rz * Math.cos(th);
-    addFence({ type, x, z, h, ang: Math.atan2(tx, tz) }, i);
+  const onOval = (C, th) => ({
+    x: C.cx + C.rx * Math.cos(th), z: C.cz + C.rz * Math.sin(th),
+    ang: Math.atan2(-C.rx * Math.sin(th), C.rz * Math.cos(th)),
   });
+  plan.forEach(([type, h], i) => addFence({ type, h, ...onOval(COURSE, 0.36 + i * (TAU - 0.5) / plan.length) }, i));
+  // pony course: low fences a Shetland can clear at the gallop
+  const ponyPlan = [
+    ['crossrail', 0.4], ['vertical', 0.45], ['oxer', 0.4, 0.3], ['log', 0.4],
+    ['vertical', 0.5], ['wall', 0.45], ['oxer', 0.45, 0.3], ['hedge', 0.45],
+  ];
+  // four fences down each long side; the turns at the ends are left clear
+  const ponyTh = [-0.56, -0.19, 0.19, 0.56, Math.PI - 0.56, Math.PI - 0.19, Math.PI + 0.19, Math.PI + 0.56];
+  ponyPlan.forEach(([type, h, spread], i) => addFence({ type, h, spread, course: 'pony', label: 'P' + (i + 1), ...onOval(PONY_ARENA, ponyTh[i]) }, i + 3));
   // cross-country fences
   let xcN = 0;
-  XC_PLAN.forEach((p, i) => { if (p.type !== 'bank') addFence({ ...p, xc: true, label: 'XC' + (++xcN) }, i + 2); else xcN++; });
+  XC_PLAN.forEach((p, i) => { if (p.type !== 'bank') addFence({ ...p, xc: true, course: 'xc', label: 'XC' + (++xcN) }, i + 2); else xcN++; });
 
   // table bank: jump up, ride across, drop off the far side
   {
@@ -599,18 +624,20 @@ const looseRails = [];
     reeds.count = n; reeds.castShadow = true; scene.add(reeds);
   }
 
-  // sandy track ribbon around the oval
-  const pos = [], idx = [], W = 3.2, SEG = 240;
-  for (let i = 0; i <= SEG; i++) {
-    const th = i / SEG * TAU;
-    const cx = COURSE.cx + COURSE.rx * Math.cos(th), cz = COURSE.cz + COURSE.rz * Math.sin(th);
-    let nx = Math.cos(th) / COURSE.rx, nz = Math.sin(th) / COURSE.rz; const nl = Math.hypot(nx, nz); nx /= nl; nz /= nl;
-    pos.push(cx - nx * W, 0.012, cz - nz * W, cx + nx * W, 0.012, cz + nz * W);
-    if (i < SEG) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  // sandy track ribbon around each arena's oval
+  for (const C of [COURSE, PONY_ARENA]) {
+    const pos = [], idx = [], W = 3.2, SEG = 240, y = groundH(C.cx, C.cz) + 0.012;
+    for (let i = 0; i <= SEG; i++) {
+      const th = i / SEG * TAU;
+      const cx = C.cx + C.rx * Math.cos(th), cz = C.cz + C.rz * Math.sin(th);
+      let nx = Math.cos(th) / C.rx, nz = Math.sin(th) / C.rz; const nl = Math.hypot(nx, nz); nx /= nl; nz /= nl;
+      pos.push(cx - nx * W, y, cz - nz * W, cx + nx * W, y, cz + nz * W);
+      if (i < SEG) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    }
+    const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); tg.setIndex(idx); tg.computeVertexNormals();
+    const track = new THREE.Mesh(tg, trackMat);
+    track.receiveShadow = true; scene.add(track);
   }
-  const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); tg.setIndex(idx); tg.computeVertexNormals();
-  const track = new THREE.Mesh(tg, trackMat);
-  track.receiveShadow = true; scene.add(track);
 })();
 
 function recomputeFence(f) {
@@ -1259,6 +1286,7 @@ function updateRider(R, s, g, dt, time) {
   let lean = 0.06 + wt * 0.12 + wg * 0.55;
   let rise = wt * 0.085 * (0.5 + 0.5 * Math.cos(TAU * 2 * (ph - 0.32))) + wg * 0.11;
   let release = 0;
+  if (g.rw) { lean += 0.25 * g.rw; release = 0.6 * g.rw; }
   if (J) {
     if (J.state === 'prep') { lean += 0.35 * jW; rise += 0.05 * jW; }
     else if (J.state === 'air') { lean = lerp(lean, 0.95, jW); rise = lerp(rise, 0.16, jW); release = 1; }
@@ -1564,7 +1592,7 @@ const prints = (() => {
       q.setFromAxisAngle(up, yaw + Math.PI);
       m.compose(new V3(x, groundH(x, z) + 0.012, z), q, new V3(S, 1, S));
       im.setMatrixAt(i, m); im.instanceMatrix.needsUpdate = true;
-      const onTrack = Math.abs(Math.hypot((x - COURSE.cx) / COURSE.rx, (z - COURSE.cz) / COURSE.rz) - 1) * Math.min(COURSE.rx, COURSE.rz) < 3.2;
+      const onTrack = onOvalTrack(COURSE, x, z) || onOvalTrack(PONY_ARENA, x, z);
       base[i] = onTrack ? 0.85 : 0.4; born[i] = now;
     },
     update(now, wet) {
@@ -1584,7 +1612,29 @@ function setGait(g) { gait = clamp(g, -1, 3); hudG.forEach((el, i) => el.classLi
 const gaitSpeed = (g) => g < 0 ? -0.9 : GAIT_SPEED[g];
 function playerControl() {
   const tIn = ((keys.ArrowLeft || keys.a || keys.A) ? 1 : 0) - ((keys.ArrowRight || keys.d || keys.D) ? 1 : 0);
-  return { target: gaitSpeed(gait) * H.B.speed, turnIn: tIn, player: true, vol: 1 };
+  return { target: gaitSpeed(gait) * H.B.speed, turnIn: tIn, player: true, vol: 1, rearHeld: spaceHold.down };
+}
+// Space: a tap jumps. Held at a standstill the horse rears and calls out; held while moving it just calls.
+const HOLD_T = 1.5;                                // seconds Space must be held before the horse rears or calls
+const spaceHold = { down: false, t: 0, standing: false, done: false };
+const isMoving = () => Math.abs(st.speed) > 0.3 || gait !== 0 || !!st.jump;
+function spacePress() {
+  if (spaceHold.down) return;
+  Object.assign(spaceHold, { down: true, t: 0, done: false, standing: !isMoving() && !st.rear });
+  if (!spaceHold.standing) startJump();            // moving: jump at once, timing matters
+}
+function spaceRelease() {
+  if (!spaceHold.down) return;
+  spaceHold.down = false;
+  if (spaceHold.standing && !spaceHold.done) startJump();   // a quick tap from a standstill is still a jump
+}
+function updateSpaceHold(dt) {
+  if (!spaceHold.down || spaceHold.done) return;
+  spaceHold.t += dt;
+  if (spaceHold.t < HOLD_T) return;
+  spaceHold.done = true;
+  if (spaceHold.standing && !isMoving() && st.stun <= 0) { st.rear = { phase: 'up', t: 0 }; st.idle = 0; neigh(H.B, 1); }
+  else neigh(H.B, 0.9);
 }
 setGait(0);
 
@@ -1612,16 +1662,18 @@ addEventListener('keydown', (e) => {
   if (!e.repeat) {
     if ((k === 'ArrowUp' || k === 'w' || k === 'W') && st && st.stun <= 0) setGait(gait + 1);
     if (k === 'r' || k === 'R') resetCourse();
+    if (k === 'c' || k === 'C') setCourse(courseIdx + 1);
     if (k === 't' || k === 'T') setEnv(timeIdx + 1, wxIdx);
-    if (k === 'y' || k === 'Y') setEnv(timeIdx, wxIdx + 1);
+    if (k === 'y' || k === 'Y') pickWeather(wxIdx + 1);
+    if (k === 'u' || k === 'U') { setWeatherAuto(!wxAuto); toast(wxAuto ? 'Auto weather on' : 'Manual weather: press Y to choose', 'info'); }
     if (k === 'ArrowDown' || k === 's' || k === 'S') setGait(gait - 1);
-    if (k === ' ') startJump();
+    if (k === ' ') spacePress();
     if (k === 'm' || k === 'M') setMuted(!muted);
     if (k >= '1' && k <= String(BREEDS.length)) setBreed(+k - 1);
   }
   keys[k] = true;
 });
-addEventListener('keyup', (e) => { keys[e.key] = false; });
+addEventListener('keyup', (e) => { keys[e.key] = false; if (e.key === ' ') spaceRelease(); });
 const startEl = document.getElementById('start');
 const dismissStart = () => { startEl.classList.add('gone'); initAudio(); window.focus(); };
 startEl.addEventListener('pointerdown', dismissStart);
@@ -1646,7 +1698,7 @@ let st; // the player's horse state (created once the terrain exists, see newRig
 const GRAV = 9.8, PREP_T = 0.2, LAND_T = 0.32;
 const jumpHeight = (B, v) => lerp(0.7, 1.15, clamp(v / B.speed / 9.5, 0, 1)) * B.S * (0.7 + 0.3 * B.k);
 function startJump() {
-  if (st.jump || !H || st.stun > 0 || st.speed < -0.05) return;
+  if (st.jump || st.rear || !H || st.stun > 0 || st.speed < -0.05) return;
   const g = clamp(st.speed / H.B.speed / 9.5, 0, 1);            // 0 standing .. 1 full gallop
   st.jump = { state: 'prep', t: 0, y: 0, vy: 0, T: 1, h: jumpHeight(H.B, st.speed) };
 }
@@ -1784,16 +1836,29 @@ function checkCollisions(dt) {
   }
 }
 
-function resetCourse() {
+const COURSES = [
+  { key: 'main', name: 'Show-jumping arena' },
+  { key: 'pony', name: 'Pony arena' },
+  { key: 'xc', name: 'Cross-country' },
+];
+let courseIdx = 0;
+function resetCourse(msg = 'Course reset') {
   fences.forEach(f => { resetFence(f); f.faultT = 99; f.side = 0; f.clipped = false; });
   score.clears = score.faults = 0; updateScore();
-  placeAtStart(); st.speed = 0; st.jump = null; st.stun = 0; st.rvx = st.rvz = 0; st.rootY = groundH(st.x, st.z); setGait(0);
-  toast('Course reset', 'info');
+  placeAtStart(); st.speed = 0; st.jump = null; st.rear = null; st.stun = 0; st.rvx = st.rvz = 0; st.rootY = groundH(st.x, st.z); setGait(0);
+  toast(msg, 'info');
 }
-// start on the track, lined up 14 m before fence 1
+// switch course: ride to its start, with a clean score
+function setCourse(i) {
+  courseIdx = (i + COURSES.length) % COURSES.length;
+  const C = COURSES[courseIdx];
+  document.getElementById('courseBtn').innerHTML = `Course: <b>${C.name}</b>`;
+  resetCourse(C.key === 'pony' && H.B.kind !== 'Pony' ? 'Pony arena · press 3 or 4 for a pony' : C.name);
+}
+// start on the track, lined up 14 m before the course's first fence
 function placeAtStart() {
-  const f = fences[0];
-  st.x = f.x - f.az.x * 14; st.z = f.z - f.az.z * 14; st.yaw = f.ang;
+  const f = fences.find(f => f.course === COURSES[courseIdx].key) ?? fences[0];
+  st.x = f.x - f.az.x * 14; st.z = f.z - f.az.z * 14; st.yaw = f.ang; st.prevX = st.x; st.prevZ = st.z;
   camState.yaw = st.yaw; camState.pos.set(st.x - Math.sin(st.yaw) * 7, 2.5, st.z - Math.cos(st.yaw) * 7);
 }
 
@@ -1801,7 +1866,7 @@ const clock = new THREE.Clock();
 const tmp = new V3(), hw = new V3();
 const newRigState = (x = 0, z = 0, yaw = 0) => ({
   x, z, yaw, speed: 0, phase: 0, turn: 0, lean: 0, graze: 0, breath: 0, swish: 0, swishT: 3,
-  jump: null, stun: 0, rvx: 0, rvz: 0, idle: 0, rootY: groundH(x, z), prevX: x, prevZ: z, slope: 0, fast: 0,
+  jump: null, rear: null, stun: 0, rvx: 0, rvz: 0, idle: 0, rootY: groundH(x, z), prevX: x, prevZ: z, slope: 0, fast: 0,
 });
 
 // One step of a horse: locomotion, jumping, terrain, gait animation and leg IK.
@@ -1812,7 +1877,22 @@ function updateRig(R, s, ctl, dt, time) {
   // --- locomotion
   s.stun = Math.max(0, s.stun - dt);
   const wet = inWater(s.x, s.z);
-  let target = s.stun > 0 ? 0 : ctl.target;
+  let target = s.stun > 0 || s.rear ? 0 : ctl.target;
+  // rearing: rise onto the hind legs, stay up while Space is held, then come back down
+  let rw = 0;
+  const RR = s.rear;
+  if (RR) {
+    RR.t += dt;
+    if (RR.phase === 'up') { rw = smooth(clamp(RR.t / 0.6, 0, 1)); if (RR.t >= 0.6) { RR.phase = 'hold'; RR.t = 0; } }
+    else if (RR.phase === 'hold') { rw = 1; if ((!ctl.rearHeld && RR.t > 0.6) || RR.t > 3) { RR.phase = 'down'; RR.t = 0; } }
+    else {
+      rw = 1 - smooth(clamp(RR.t / 0.5, 0, 1));
+      if (RR.t >= 0.5) {
+        s.rear = null;
+        if (ctl.player) { hoofThud(0.9); legs.forEach(L => { if (L.front) { L.hoof.getWorldPosition(hw); dust.spawn(hw, 4, 0.7 * B.S); } }); }
+      }
+    }
+  }
   if (wet) target *= 0.55;                                   // wading is slow
   s.speed = s.speed < target ? Math.min(target, s.speed + 2.6 * dt) : Math.max(target, s.speed - 4.0 * dt);
   const aSpd = Math.abs(s.speed);
@@ -1916,6 +1996,13 @@ function updateRig(R, s, ctl, dt, time) {
       }
       L.y = lerp(L.y, _kf[0] * k, jW); L.z = lerp(L.z, _kf[1] * k, jW); L.flex = lerp(L.flex, _kf[2], jW);
     }
+    if (rw > 0) {
+      // front legs folded and pawing the air, hind legs stepped under the body
+      if (L.front) {
+        const paw = Math.sin(time * 7 + (L.x > 0 ? 0 : Math.PI));
+        L.y = lerp(L.y, (0.8 + 0.1 * paw) * k, rw); L.z = lerp(L.z, (-0.3 + 0.06 * paw) * k, rw); L.flex = lerp(L.flex, 2.0 + 0.4 * paw, rw);
+      } else { L.z = lerp(L.z, 0.14 * k, rw); L.y *= 1 - rw; }
+    }
     // follow the ground under each hoof
     if (!airborne) {
       const lx = L.x * S, lz = (L.nz + L.z) * S;
@@ -1939,6 +2026,13 @@ function updateRig(R, s, ctl, dt, time) {
   body.position.z = -pc * Math.sin(tp);
   body.rotation.x = (wg * 0.07 * Math.sin(TAU * (ph - 0.25)) + ww * 0.008 * Math.sin(TAU * 2 * ph)) * gw + tp;
   body.rotation.z = ww * 0.012 * Math.sin(TAU * ph) + wt * 0.01 * Math.sin(TAU * ph);
+  if (rw > 0) {
+    // rear up, pivoting over the hind legs (body-local point above the hocks)
+    const rp = -0.88 * rw + 0.04 * Math.sin(time * 5) * rw, py = 0.62, pz = -0.55;
+    body.position.y += py - (py * Math.cos(rp) - pz * Math.sin(rp)) - 0.06 * rw * k;
+    body.position.z += pz - (py * Math.sin(rp) + pz * Math.cos(rp));
+    body.rotation.x += rp;
+  }
   body.scale.set(1 + 0.012 * Math.sin(s.breath), 1 + 0.006 * Math.sin(s.breath), 1);
 
   // --- IK legs
@@ -1968,9 +2062,9 @@ function updateRig(R, s, ctl, dt, time) {
   const gz = s.graze;
   const nod = ww * 0.06 * Math.sin(TAU * 2 * (ph - 0.1)) + wt * 0.015 * Math.sin(TAU * 2 * ph) + wg * 0.12 * Math.sin(TAU * (ph - 0.2));
   const grazeMove = gz * 0.04 * Math.sin(time * 0.7) * Math.sin(time * 0.31);
-  neck.rotation.x = 0.1 + wg * 0.14 + wt * 0.06 + nod * gw + gz * (B.graze ?? 1.05) + grazeMove + jNeck - s.slope * 0.5;
+  neck.rotation.x = 0.1 + wg * 0.14 + wt * 0.06 + nod * gw + gz * (B.graze ?? 1.05) + grazeMove + jNeck - s.slope * 0.5 + 0.3 * rw;
   neck.rotation.y = s.turn * 0.22 + gz * 0.12 * Math.sin(time * 0.23);
-  head.rotation.x = 0.82 - wg * 0.18 + gz * 0.25 + 0.03 * Math.sin(time * 0.9) * (1 - clamp(aSpd, 0, 1));
+  head.rotation.x = 0.82 - wg * 0.18 + gz * 0.25 + 0.03 * Math.sin(time * 0.9) * (1 - clamp(aSpd, 0, 1)) + rw * (0.1 + 0.12 * Math.sin(time * 3.1));
   head.rotation.y = s.turn * 0.15;
   head.rotation.z = gz * 0.05 * Math.sin(time * 4.5); // chewing wiggle
 
@@ -1992,7 +2086,7 @@ function updateRig(R, s, ctl, dt, time) {
   s.swish = damp(s.swish, 0, 0.9, dt);
   const run = clamp((aSpd / SM - 2) / 7, 0, 1);
   tailSegs.forEach((g, i) => {
-    g.rotation.x = lerp(TAIL_REST[i], TAIL_RUN[i], run) + (i === 0 ? jTail : jTail * 0.3) + run * 0.06 * Math.sin(time * 13 - i * 0.8) + (wt + wg) * 0.04 * Math.sin(TAU * 2 * ph - i * 0.5);
+    g.rotation.x = lerp(TAIL_REST[i], TAIL_RUN[i], run) + (i === 0 ? jTail + 0.7 * rw : jTail * 0.3) + run * 0.06 * Math.sin(time * 13 - i * 0.8) + (wt + wg) * 0.04 * Math.sin(TAU * 2 * ph - i * 0.5);
     g.rotation.z = (s.swish * 1.0 + 0.03) * Math.sin(time * 3.2 - i * 0.55) * (0.3 + i * 0.12) - s.turn * 0.05 * (i > 0 ? 1 : 0);
   });
 
@@ -2000,7 +2094,7 @@ function updateRig(R, s, ctl, dt, time) {
   s.fast = aSpd / SM > 3 ? 1 : s.fast;
   if (s.fast && aSpd < 0.1) { s.fast = 0; if (ctl.vol > 0.05) snort(B, ctl.vol); }
 
-  if (R.rider) updateRider(R, s, { ww, wt, wg, ph, d: G.d, jW, J, aSpd, refV }, dt, time);
+  if (R.rider) updateRider(R, s, { ww, wt, wg, ph, d: G.d, jW, J, aSpd, refV, rw }, dt, time);
 }
 
 function footfall(R, s, L, i, ctl, refV, wg) {
@@ -2135,16 +2229,49 @@ function envTarget() {
     exp: T.exp, near: W.near, far: W.far, rain: W.rain, wet: W.rain, birds: T.lum * (1 - 0.7 * W.rain),
   };
 }
-function setEnv(t, w, instant) {
+// rate: how fast the sky blends to the new setting (1.3 ≈ 3 s for a manual pick, 0.12 ≈ 30 s for weather rolling in on its own)
+let envRate = 1.3;
+function setEnv(t, w, instant, rate = 1.3) {
   timeIdx = (t + TIMES.length) % TIMES.length; wxIdx = (w + WEATHERS.length) % WEATHERS.length;
+  envRate = rate;
   Object.assign(envTgt, envTarget());
   if (instant || !envCur.sun) for (const k in envTgt) envCur[k] = envTgt[k].clone ? envTgt[k].clone() : envTgt[k];
   document.getElementById('timeBtn').textContent = TIMES[timeIdx].name;
   document.getElementById('wxBtn').textContent = WEATHERS[wxIdx].name;
 }
+
+// automatic weather: a new kind of weather rolls in roughly every 3 minutes
+const WX_AUTO_MIN = 150, WX_AUTO_MAX = 210;                  // seconds between changes
+const WX_WEIGHTS = [3, 3, 2, 1];                               // clear, cloudy, rain, fog
+let wxAuto = true, wxTimer = WX_AUTO_MIN + Math.random() * (WX_AUTO_MAX - WX_AUTO_MIN);
+function nextAutoWeather() {
+  const total = WX_WEIGHTS.reduce((a, w, i) => a + (i === wxIdx ? 0 : w), 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < WX_WEIGHTS.length; i++) { if (i === wxIdx) continue; r -= WX_WEIGHTS[i]; if (r <= 0) return i; }
+  return (wxIdx + 1) % WEATHERS.length;
+}
+function setWeatherAuto(on) {
+  wxAuto = on;
+  if (on) wxTimer = WX_AUTO_MIN + Math.random() * (WX_AUTO_MAX - WX_AUTO_MIN);
+  const b = document.getElementById('wxAutoBtn');
+  b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+  b.innerHTML = `${on ? 'Auto' : 'Manual'}<span class="wl"> weather</span>`;
+  b.title = on ? 'Weather changes on its own every few minutes. Click to choose it yourself (U)' : 'You choose the weather. Click to let it change on its own (U)';
+}
+// a manual pick switches auto weather off
+function pickWeather(w) { setWeatherAuto(false); setEnv(timeIdx, w); }
+function updateAutoWeather(dt) {
+  if (!wxAuto) return;
+  wxTimer -= dt;
+  if (wxTimer > 0) return;
+  wxTimer = WX_AUTO_MIN + Math.random() * (WX_AUTO_MAX - WX_AUTO_MIN);
+  const w = nextAutoWeather();
+  setEnv(timeIdx, w, false, 0.12);
+  toast({ Clear: 'The sky is clearing', Cloudy: 'Clouds rolling in', Rain: 'Rain is coming', Fog: 'Fog is settling in' }[WEATHERS[w].name], 'info');
+}
 const LIGHT_REF = (() => { const T = TIMES[1]; return 0.42 * T.sunI * new V3(...T.sun).normalize().y + 0.55 * T.hemiI; })();
 function updateEnv(dt) {
-  const k = 1 - Math.exp(-1.3 * dt);
+  const k = 1 - Math.exp(-envRate * dt);
   for (const key in envTgt) {
     const a = envCur[key], b = envTgt[key];
     if (a && a.isColor) a.lerp(b, k); else if (a && a.isVector3) a.lerp(b, k).normalize(); else envCur[key] = lerp(a, b, k);
@@ -2338,6 +2465,7 @@ function answerNeigh() {
 }
 
 function updateWorld(dt, time) {
+  updateAutoWeather(dt);
   updateEnv(dt);
   rainFx.update(dt);
   birds.update(dt, time);
@@ -2358,9 +2486,9 @@ function updateWorld(dt, time) {
       if (k) keys[k] = true;
       if (act === 'up' && st.stun <= 0) setGait(gait + 1);
       if (act === 'down') setGait(gait - 1);
-      if (act === 'jump') startJump();
+      if (act === 'jump') spacePress();
     });
-    const up = () => { b.classList.remove('down'); if (k) keys[k] = false; };
+    const up = () => { b.classList.remove('down'); if (k) keys[k] = false; if (act === 'jump') spaceRelease(); };
     b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
   }
 })();
@@ -2369,12 +2497,16 @@ function updateWorld(dt, time) {
 st = newRigState();
 setEnv(1, 0, true);
 document.getElementById('timeBtn').addEventListener('click', (e) => { setEnv(timeIdx + 1, wxIdx); e.currentTarget.blur(); });
-document.getElementById('wxBtn').addEventListener('click', (e) => { setEnv(timeIdx, wxIdx + 1); e.currentTarget.blur(); });
+document.getElementById('wxBtn').addEventListener('click', (e) => { pickWeather(wxIdx + 1); e.currentTarget.blur(); });
+document.getElementById('courseBtn').addEventListener('click', (e) => { setCourse(courseIdx + 1); e.currentTarget.blur(); });
+document.getElementById('wxAutoBtn').addEventListener('click', (e) => { setWeatherAuto(!wxAuto); e.currentTarget.blur(); });
+setWeatherAuto(true);
 setBreed(0);
 updateScore();
 placeAtStart();
 st.rootY = groundH(st.x, st.z);
 function stepWorld(dt, time) {
+  updateSpaceHold(dt);
   updateRig(H, st, playerControl(), dt, time);
   updateWorld(dt, time);
   updateRails(dt);
@@ -2401,7 +2533,7 @@ addEventListener('resize', () => {
 
 // debug hooks
 let simT = 1000;
-window.__horse = { get st() { return st; }, groundH, setEnv, herd, birds, setGait, setBreed, startJump, fences, colliders, resetCourse, score, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) { simT += dt; stepWorld(dt, simT); } renderer.render(scene, camera); }, camera, scene, get H() { return H; }, setCam: (yawOff, pitch, dist) => { camYawOff = yawOff; camPitch = pitch; camDist = dist; lastDrag = 1e9; } };
+window.__horse = { get st() { return st; }, spacePress, spaceRelease, setCourse, groundH, setEnv, get wx() { return { auto: wxAuto, timer: wxTimer, idx: wxIdx, rate: envRate }; }, setWeatherAuto, pickWeather, herd, birds, setGait, setBreed, startJump, fences, colliders, resetCourse, score, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) { simT += dt; stepWorld(dt, simT); } renderer.render(scene, camera); }, camera, scene, get H() { return H; }, setCam: (yawOff, pitch, dist) => { camYawOff = yawOff; camPitch = pitch; camDist = dist; lastDrag = 1e9; } };
 </script>
 </body>
 </html>
