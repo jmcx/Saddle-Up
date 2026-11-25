@@ -33,7 +33,7 @@ Then go to http://localhost:8765.
 | T | Time of day: dawn, day, golden hour, dusk |
 | Y | Pick the weather: clear, cloudy, rain, fog (switches to manual weather) |
 | U | Auto weather on/off |
-| C | Change course: show-jumping arena, pony arena, cross-country, stable yard |
+| C | Change course: show-jumping arena, pony arena, cross-country, stable yard, trail course |
 | R | Reset the course and score |
 | M | Sound on/off |
 | Drag / scroll | Orbit and zoom the camera |
@@ -69,6 +69,15 @@ Your rider stays the same size and in the same clothes whichever horse they ride
 - Just a little low: a rail falls (or you rap a solid fence) and you get a fault, but you keep going.
 - Too early, too late or no jump at all: you crash or refuse, and the horse stops.
 - Knocked rails go back up a few seconds after you ride away.
+
+## Trail course
+
+West of the stable is a fenced sand area with two trail obstacles. Press C until it says "Trail course" to start at its gateway.
+
+- **Seesaw bridge:** a 5 m plank on a log pivot. Walk on at the end that's down (it's painted yellow at both ends). As your horse passes the middle, the plank tips over with a thump, and you walk off the other end. Crossing it end to end scores a clear; stepping off the side is a fault. The raised end is too high to step onto, so come at it from the low end.
+- **Slalom:** six striped poles 6 m apart, with cones at each end. Weave through them on alternating sides, starting from either end, at a walk or a trot. A clean run shows your time and scores a clear. Each pole you pass on the wrong side, or knock over, is a fault. Knocked poles stand back up once you've ridden away.
+
+Horses now turn a little tighter at a walk and trot (it makes the slalom possible at a trot), and the same as before at the gallop.
 
 ## Stable yard
 

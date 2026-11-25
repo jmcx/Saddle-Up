@@ -227,6 +227,11 @@ const POND = { x: 74.6, z: 77.5, r: 8.5, depth: 0.5, level: 0 };
 const MEADOW = { x: -105, z: 55, r: 24 };                    // where the loose horses graze
 // stable yard: barn (with boxes, tack room and office) and an indoor arena. Local coordinates are metres from this point.
 const STABLE = { x: -120, z: -40, y: 0, rect: [-26, 32, -38, 12] };   // rect: minX, maxX, minZ, maxZ of the hard-standing (local)
+// trail course: a fenced sand area west of the stable with a seesaw bridge and a slalom (world centre and half sizes)
+const TRAIL = { x: -182, z: -48, hx: 21, hz: 14, y: 0 };
+// the seesaw: a plank on a pivot running along +x. theta > 0 tips the far (+x) end up; it rests on whichever end is down
+const SEESAW = { x: TRAIL.x - 3, z: TRAIL.z - 6, L: 5, W: 1.5, T: 0.1, py: 0.38, theta: 0, target: 0, vel: 0, y: 0 };
+SEESAW.tmax = Math.atan2(SEESAW.py, SEESAW.L / 2); SEESAW.theta = SEESAW.target = -SEESAW.tmax;   // starts with the gateway end down
 // spots levelled out so jumps sit on flat ground: { x, z, r, h0 }
 const FLATS = [
   ...XC_PLAN.map(p => ({ x: p.x, z: p.z, r: p.type === 'bank' ? 9 : 6 })),
@@ -234,6 +239,7 @@ const FLATS = [
   { x: MEADOW.x, z: MEADOW.z, r: MEADOW.r },
   { x: PONY_ARENA.cx, z: PONY_ARENA.cz, r: PONY_ARENA.rz + 8 },
   { x: STABLE.x + 3, z: STABLE.z - 13, r: 42 },
+  { x: TRAIL.x, z: TRAIL.z, r: 27 },
 ];
 BANK.ax = new V3(Math.cos(BANK.ang), 0, -Math.sin(BANK.ang)); BANK.az = new V3(Math.sin(BANK.ang), 0, Math.cos(BANK.ang));
 
@@ -254,7 +260,13 @@ function bankMask(x, z) {
   return (1 - sstep(BANK.hx, BANK.hx + 0.25, lx)) * (1 - sstep(BANK.hz, BANK.hz + 0.25, lz));
 }
 // the ground the horse stands on (includes the raised bank)
-function groundH(x, z) { return baseH(x, z) + BANK.h * bankMask(x, z); }
+// height of the seesaw's top surface at (x, z), or -Infinity off the plank
+function seesawTop(x, z) {
+  const u = x - SEESAW.x;
+  if (Math.abs(z - SEESAW.z) > SEESAW.W / 2 || Math.abs(u) > SEESAW.L / 2) return -Infinity;
+  return SEESAW.y + SEESAW.py + SEESAW.T + u * Math.tan(SEESAW.theta);
+}
+function groundH(x, z) { return Math.max(baseH(x, z) + BANK.h * bankMask(x, z), seesawTop(x, z)); }
 function inWater(x, z) { return Math.hypot(x - POND.x, z - POND.z) < POND.r - 1.2; }
 // level each flat spot at whatever height the ground had there before it
 FLATS.forEach((f, i) => {
@@ -262,8 +274,11 @@ FLATS.forEach((f, i) => {
   for (let j = 0; j < i; j++) { const g = FLATS[j]; h = lerp(h, g.h0, 1 - sstep(g.r, g.r * 2, Math.hypot(f.x - g.x, f.z - g.z))); }
   f.h0 = h;
 });
+// the trail area sits at the stable yard's level (it's the last flat spot, so nothing else depends on its old value)
+FLATS.find(f => f.x === TRAIL.x).h0 = FLATS.find(f => f.x === STABLE.x + 3).h0;
 POND.level = FLATS.find(f => f.x === POND.x).h0 - 0.1;
 STABLE.y = FLATS.find(f => f.x === STABLE.x + 3).h0;
+TRAIL.y = SEESAW.y = FLATS.find(f => f.x === TRAIL.x).h0;
 
 // the same height function in GLSL, for the grass blades
 const TERRAIN_GLSL = (() => {
@@ -285,7 +300,8 @@ const TERRAIN_GLSL = (() => {
     float yardFade(vec2 p){
       vec2 c = vec2(${n(STABLE.x + (STABLE.rect[0] + STABLE.rect[1]) / 2)}, ${n(STABLE.z + (STABLE.rect[2] + STABLE.rect[3]) / 2)});
       vec2 hs = vec2(${n((STABLE.rect[1] - STABLE.rect[0]) / 2)}, ${n((STABLE.rect[3] - STABLE.rect[2]) / 2)});
-      return smoothstep(0.0, 1.2, length(max(abs(p - c) - hs, 0.0)));
+      vec2 tc = vec2(${n(TRAIL.x)}, ${n(TRAIL.z)}), ths = vec2(${n(TRAIL.hx)}, ${n(TRAIL.hz)});
+      return smoothstep(0.0, 1.2, length(max(abs(p - c) - hs, 0.0))) * smoothstep(0.0, 1.0, length(max(abs(p - tc) - ths, 0.0)));
     }`;
   return s;
 })();
@@ -417,7 +433,8 @@ const colliders = [];
 // keep trees and rocks off the arena, the cross-country route and the meadow
 const nearFeature = (x, z, m) => nearCourse(x, z, m) || XC_PLAN.some(p => Math.hypot(x - p.x, z - p.z) < 10 + m)
   || Math.hypot(x - POND.x, z - POND.z) < POND.r + 6 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < MEADOW.r + 4 + m
-  || Math.hypot(x - (STABLE.x + 3), z - (STABLE.z - 13)) < 46 + m;
+  || Math.hypot(x - (STABLE.x + 3), z - (STABLE.z - 13)) < 46 + m
+  || (Math.abs(x - TRAIL.x) < TRAIL.hx + 6 + m && Math.abs(z - TRAIL.z) < TRAIL.hz + 6 + m);
 (() => {
   const rnd = (a, b) => a + Math.random() * (b - a);
   const trunkGeo = new THREE.CylinderGeometry(0.16, 0.3, 4, 8).translate(0, 2, 0);
@@ -945,6 +962,184 @@ const stallBoxes = [];       // box interiors for the resident horses: { x, z, y
   barPos.forEach(([x, z], i) => { m4.makeTranslation(x, 1.8, z); bars.setMatrixAt(i, m4); });
   bars.castShadow = true; root.add(bars);
 })();
+
+// ---------------------------------------------------------------- trail course: a seesaw bridge and a slalom
+const SLALOM = { z: TRAIL.z + 6, x0: TRAIL.x - 15, gap: 6, n: 6, poles: [], run: null };
+const seesaw = { group: null, onPrev: false, entry: 0, entryT: 0 };
+(() => {
+  const Y = TRAIL.y;
+  const canvasTex = (w, h, draw, rep) => {
+    const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+    if (rep) t.repeat.set(rep[0], rep[1]); return t;
+  };
+  const sandTex = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#b8a07a'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 6000; i++) { g.fillStyle = ['#a68e68', '#c4ad88', '#9e875f', '#cbb592'][i % 4]; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2); }
+  }, [TRAIL.hx / 2, TRAIL.hz / 2]);
+  const plankTex = canvasTex(256, 64, (g, w, h) => {
+    g.fillStyle = '#8f6a45'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 4; i++) { g.fillStyle = ['#94704a', '#87633f', '#9a754e', '#8a6541'][i]; g.fillRect(0, i * 16, w, 15); g.fillStyle = '#5a3f27'; g.fillRect(0, i * 16 + 15, w, 1); }
+    for (let i = 0; i < 300; i++) { g.fillStyle = 'rgba(0,0,0,0.07)'; g.fillRect(Math.random() * w, Math.random() * h, 8 + Math.random() * 30, 1); }
+  });
+  const M = (o) => new THREE.MeshStandardMaterial({ roughness: 0.85, ...o });
+  const sand = M({ map: sandTex, roughness: 1 }), wood = M({ map: plankTex }), woodDark = M({ color: 0x5a3e28 }), white = M({ color: 0xf0ede6 });
+  const shadow = (m) => { m.castShadow = true; m.receiveShadow = true; return m; };
+
+  // sand surface
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(TRAIL.hx * 2, TRAIL.hz * 2).rotateX(-Math.PI / 2), sand);
+  floor.position.set(TRAIL.x, Y + 0.012, TRAIL.z); floor.receiveShadow = true; scene.add(floor);
+
+  // post-and-rail fence with a gateway on the east side, facing the stable
+  const fenceParts = { posts: [], rails: [] };
+  const run = (x0, z0, x1, z1) => {
+    const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(len / 3));
+    for (let i = 0; i <= n; i++) fenceParts.posts.push([lerp(x0, x1, i / n), lerp(z0, z1, i / n)]);
+    fenceParts.rails.push([x0, z0, x1, z1]);
+    walls.push({ minX: Math.min(x0, x1) - 0.12, maxX: Math.max(x0, x1) + 0.12, minZ: Math.min(z0, z1) - 0.12, maxZ: Math.max(z0, z1) + 0.12 });
+  };
+  const X0 = TRAIL.x - TRAIL.hx, X1 = TRAIL.x + TRAIL.hx, Z0 = TRAIL.z - TRAIL.hz, Z1 = TRAIL.z + TRAIL.hz, GATE = 3;
+  run(X0, Z0, X1, Z0); run(X0, Z1, X1, Z1); run(X0, Z0, X0, Z1);
+  run(X1, Z0, X1, TRAIL.z - GATE); run(X1, TRAIL.z + GATE, X1, Z1);
+  const postGeo = new THREE.BoxGeometry(0.12, 1.25, 0.12).translate(0, 0.62, 0);
+  const posts = new THREE.InstancedMesh(postGeo, white, fenceParts.posts.length);
+  const m4 = new THREE.Matrix4();
+  fenceParts.posts.forEach(([x, z], i) => { m4.makeTranslation(x, Y, z); posts.setMatrixAt(i, m4); });
+  shadow(posts); scene.add(posts);
+  for (const [x0, z0, x1, z1] of fenceParts.rails) for (const h of [0.55, 1.05]) {
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const r = shadow(new THREE.Mesh(new THREE.BoxGeometry(x0 === x1 ? 0.06 : len, 0.1, x0 === x1 ? len : 0.06), white));
+    r.position.set((x0 + x1) / 2, Y + h, (z0 + z1) / 2); scene.add(r);
+  }
+  // sign over the gateway
+  {
+    const tex = canvasTex(512, 128, (g, w, h) => {
+      g.fillStyle = '#243a2c'; g.fillRect(0, 0, w, h); g.strokeStyle = '#f1ead8'; g.lineWidth = 6; g.strokeRect(10, 10, w - 20, h - 20);
+      g.fillStyle = '#f1ead8'; g.font = 'bold 64px Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('Trail course', w / 2, h / 2 + 2);
+    });
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 }));
+    sign.position.set(X1 + 0.08, Y + 2.3, TRAIL.z); sign.rotation.y = Math.PI / 2; scene.add(sign);
+    for (const sz of [-1, 1]) { const p = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.6, 0.14), woodDark)); p.position.set(X1, Y + 1.3, TRAIL.z + sz * GATE); scene.add(p); }
+    const beam = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, GATE * 2 + 0.2), woodDark)); beam.position.set(X1, Y + 2.62, TRAIL.z); scene.add(beam);
+  }
+
+  // seesaw: a fulcrum log, and a plank that pivots on top of it
+  {
+    const { L, W, T, py } = SEESAW;
+    const log = shadow(new THREE.Mesh(new THREE.CylinderGeometry(py / 2, py / 2, W + 0.3, 16).rotateX(Math.PI / 2), woodDark));
+    log.position.set(SEESAW.x, Y + py / 2, SEESAW.z); scene.add(log);
+    for (const sz of [-1, 1]) {
+      const chock = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.12), woodDark));
+      chock.position.set(SEESAW.x, Y + 0.09, SEESAW.z + sz * (W / 2 + 0.22)); scene.add(chock);
+    }
+    const g = new THREE.Group(); g.position.set(SEESAW.x, Y + py, SEESAW.z); scene.add(g);
+    const plank = shadow(new THREE.Mesh(new THREE.BoxGeometry(L, T, W), wood)); plank.position.y = T / 2; g.add(plank);
+    for (let u = -L / 2 + 0.25; u < L / 2; u += 0.45) {                       // grip battens across the plank
+      const b = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.035, W - 0.06), woodDark)); b.position.set(u, T + 0.017, 0); g.add(b);
+    }
+    for (const su of [-1, 1]) {                                                // painted ends, so you can see where to step on
+      const e = new THREE.Mesh(new THREE.BoxGeometry(0.18, T + 0.004, W + 0.004), M({ color: 0xe6c83a })); e.position.set(su * (L / 2 - 0.09), T / 2, 0); g.add(e);
+    }
+    g.rotation.z = SEESAW.theta;
+    seesaw.group = g;
+  }
+
+  // slalom poles: striped poles on rubber bases, 6 m apart
+  {
+    const stripes = canvasTex(4, 256, (g, w, h) => { for (let i = 0; i < 10; i++) { g.fillStyle = i % 2 ? '#c8262d' : '#f4f1ea'; g.fillRect(0, i * h / 10, w, h / 10 + 1); } });
+    const poleMat = M({ map: stripes, roughness: 0.5 }), baseMat = M({ color: 0x1c1c1c, roughness: 0.9 });
+    for (let i = 0; i < SLALOM.n; i++) {
+      const x = SLALOM.x0 + i * SLALOM.gap, z = SLALOM.z;
+      const base = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.07, 18), baseMat)); base.position.set(x, Y + 0.035, z); scene.add(base);
+      const g = new THREE.Group(); g.position.set(x, Y + 0.06, z); g.rotation.order = 'YXZ'; scene.add(g);
+      const pole = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 1.7, 10).translate(0, 0.85, 0), poleMat)); g.add(pole);
+      const knob = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), poleMat)); knob.position.y = 1.72; g.add(knob);
+      SLALOM.poles.push({ i, x, z, group: g, down: false, fall: 0, downT: 0 });
+    }
+    // cones marking where the slalom starts and ends
+    const cone = new THREE.ConeGeometry(0.16, 0.42, 12).translate(0, 0.21, 0), coneMat = M({ color: 0xff7a1a, roughness: 0.6 });
+    for (const x of [SLALOM.x0 - 3.5, SLALOM.x0 + (SLALOM.n - 1) * SLALOM.gap + 3.5]) for (const dz of [-2.5, 2.5]) {
+      const c = shadow(new THREE.Mesh(cone, coneMat)); c.position.set(x, Y, SLALOM.z + dz); scene.add(c);
+    }
+  }
+})();
+
+function updateTrail(dt, time) {
+  const t = SEESAW, S = H.B.S;
+  // who's standing on the seesaw: your horse, or you on foot
+  const along = (x, z) => (Math.abs(z - t.z) < t.W / 2 + 0.15 && Math.abs(x - t.x) < t.L / 2) ? x - t.x : null;
+  let u = along(st.x, st.z);
+  if (u === null && player && player.mode === 'free') u = along(player.x, player.z);
+  // it tips once the weight passes the middle, and stays down on that side
+  if (u !== null) { if (u > 0.25) t.target = -t.tmax; else if (u < -0.25) t.target = t.tmax; }
+  if (t.theta !== t.target) {
+    const step = (2 * t.tmax / 1.1) * dt;
+    const d = t.target - t.theta;
+    t.theta += clamp(d, -step, step);
+    if (Math.abs(t.target - t.theta) < 1e-4) {
+      t.theta = t.target;
+      // the end lands with a thump and a puff of sand
+      const endX = t.x + (t.theta > 0 ? -1 : 1) * t.L / 2;
+      hoofSound(0.9, 0); setTimeout(() => hoofSound(0.5, 0), 60);
+      dust.spawn(new V3(endX, t.y + 0.05, t.z), 8, 0.8);
+    }
+    seesaw.group.rotation.z = t.theta;
+  }
+  // crossing: get on at one end, off at the other
+  const onNow = along(st.x, st.z) !== null;
+  if (onNow && !seesaw.onPrev) { seesaw.entry = Math.sign(st.x - t.x) || 1; }
+  if (!onNow && seesaw.onPrev) {
+    const exitU = st.x - t.x, side = Math.abs(st.z - t.z) >= t.W / 2 + 0.15;
+    if (side && Math.abs(exitU) < t.L / 2 - 0.4) { score.faults++; updateScore(); toast('Stepped off the side of the seesaw', 'warn'); }
+    else if (Math.sign(exitU) === -seesaw.entry) { score.clears++; updateScore(); toast('Seesaw crossed · well balanced!', 'good'); }
+  }
+  seesaw.onPrev = onNow;
+
+  // slalom: weave between the poles, alternating sides, without knocking any
+  const fx = Math.sin(st.yaw), fz = Math.cos(st.yaw), lastX = SLALOM.x0 + (SLALOM.n - 1) * SLALOM.gap;
+  for (const p of SLALOM.poles) {
+    if (!p.down) {
+      for (const o of [0.9 * S, 0, -0.85 * S]) {
+        if (Math.hypot(st.x + fx * o - p.x, st.z + fz * o - p.z) < 0.3 * S + 0.08) {
+          p.down = true; p.fall = 0; p.yaw = Math.atan2(fx, fz); p.downT = 0;
+          railClack(0.8); score.faults++; updateScore(); toast(`Knocked pole ${p.i + 1}`, 'warn');
+          if (SLALOM.run) SLALOM.run.knocks++;
+          break;
+        }
+      }
+    } else {
+      // fall over, then get stood back up once you've moved away
+      p.fall = Math.min(1, p.fall + dt * (1 + p.fall * 4));
+      p.group.rotation.set(p.fall * p.fall * 1.5, p.yaw, 0);
+      p.downT += dt;
+      if (p.downT > 6 && Math.hypot(st.x - p.x, st.z - p.z) > 6) { p.down = false; p.group.rotation.set(0, 0, 0); }
+    }
+  }
+  const prevX = SLALOM.prevX ?? st.x; SLALOM.prevX = st.x;
+  if (Math.abs(st.x - prevX) > 2) { SLALOM.run = null; return; }        // teleported (new course or horse): nothing crossed
+  const dz = st.z - SLALOM.z;
+  if (Math.abs(dz) > 6 || st.x < SLALOM.x0 - 8 || st.x > lastX + 8) { SLALOM.run = null; return; }
+  for (const p of SLALOM.poles) {
+    if ((prevX - p.x) * (st.x - p.x) > 0 || prevX === st.x) continue;           // not crossing this pole's line
+    const dir = Math.sign(st.x - prevX), side = Math.sign(dz) || 1;
+    const r = SLALOM.run;
+    const first = dir > 0 ? 0 : SLALOM.n - 1;
+    if (!r) {
+      if (p.i === first) SLALOM.run = { dir, next: p.i + dir, side, count: 1, misses: 0, knocks: 0, t0: time };
+      continue;
+    }
+    if (dir !== r.dir || p.i !== r.next) { SLALOM.run = null; continue; }        // went back or skipped ahead: start again
+    const expected = r.side * (r.count % 2 ? -1 : 1);
+    if (side !== expected) { r.misses++; score.faults++; updateScore(); toast(`Missed pole ${p.i + 1}: weave the other side`, 'warn'); }
+    r.count++; r.next += dir;
+    if (r.count === SLALOM.n) {
+      const secs = (time - r.t0).toFixed(1);
+      if (!r.misses && !r.knocks) { score.clears++; updateScore(); toast(`Clean slalom in ${secs} s!`, 'good'); }
+      else toast(`Slalom done in ${secs} s · ${r.misses + r.knocks} fault${r.misses + r.knocks === 1 ? '' : 's'}`, 'info');
+      SLALOM.run = null;
+    }
+  }
+}
 
 // soft, rhythmic crunching
 function munch(vol, pan = 0) {
@@ -2190,7 +2385,7 @@ function crash(hit, v, air) {
   if (hit.wall) {
     msg = 'Whoa! Ran into the wall';
   } else if (hit.bank) {
-    msg = air ? 'Too low to land on the bank' : 'Jump up the bank!';
+    msg = hit.seesaw ? 'Step onto the seesaw from its low end' : air ? 'Too low to land on the bank' : 'Jump up the bank!';
   } else if (hit.c) {
     msg = hit.c.type === 'horse' ? 'Watch out for the other horses!' : hit.c.type === 'bale' ? 'Bumped into the hay bale' : hit.c.type === 'tree' ? 'Ouch! Ran into a tree' : hit.c.type === 'wing' ? 'Hit the wing — aim for the middle'
       : air ? 'Too low — hit the rock' : 'Blocked by a rock — jump it!';
@@ -2294,8 +2489,9 @@ function checkCollisions(dt) {
     const o = st.speed >= 0 ? 0.95 * S : -0.85 * S;
     const need = groundH(st.x + fx * o, st.z + fz * o) - alt;
     if (air ? need > tuck : need > 0.3 * S + 0.25) {
+      const onSeesaw = seesawTop(st.x + fx * o, st.z + fz * o) > -Infinity;
       st.x = st.prevX; st.z = st.prevZ;
-      if (!hit) hit = { bank: true, nx: -fx * Math.sign(o), nz: -fz * Math.sign(o) };
+      if (!hit) hit = { bank: true, seesaw: onSeesaw, nx: -fx * Math.sign(o), nz: -fz * Math.sign(o) };
     }
   }
   if (hit && st.stun <= 0) {
@@ -2310,6 +2506,7 @@ const COURSES = [
   { key: 'pony', name: 'Pony arena' },
   { key: 'xc', name: 'Cross-country' },
   { key: 'stable', name: 'Stable yard' },
+  { key: 'trail', name: 'Trail course' },
 ];
 let courseIdx = 0;
 function resetCourse(msg = 'Course reset') {
@@ -2328,6 +2525,12 @@ function setCourse(i) {
 }
 // start on the track, lined up 14 m before the course's first fence
 function placeAtStart() {
+  if (COURSES[courseIdx].key === 'trail') {
+    // just inside the gateway, facing the seesaw and the slalom
+    st.x = TRAIL.x + TRAIL.hx - 4; st.z = TRAIL.z; st.yaw = -Math.PI / 2; st.prevX = st.x; st.prevZ = st.z;
+    camState.yaw = st.yaw; camState.pos.set(st.x - Math.sin(st.yaw) * 7, TRAIL.y + 2.5, st.z - Math.cos(st.yaw) * 7);
+    return;
+  }
   if (COURSES[courseIdx].key === 'stable') {
     // in the yard, facing the barn's big doorway
     st.x = STABLE.x + 26; st.z = STABLE.z; st.yaw = -Math.PI / 2; st.prevX = st.x; st.prevZ = st.z;
@@ -2374,7 +2577,7 @@ function updateRig(R, s, ctl, dt, time) {
   s.speed = s.speed < target ? Math.min(target, s.speed + 2.6 * dt) : Math.max(target, s.speed - 4.0 * dt);
   const aSpd = Math.abs(s.speed);
   s.turn = damp(s.turn, ctl.turnIn, 6, dt);
-  const turnRate = aSpd < 0.2 ? 0.8 : lerp(1.15, 0.7, clamp((aSpd / SM - 1.7) / 7.8, 0, 1));
+  const turnRate = aSpd < 0.2 ? 0.8 : lerp(1.55, 0.7, clamp((aSpd / SM - 1.7) / 7.8, 0, 1));   // nimble at a walk and trot, wider at the gallop
   s.yaw += s.turn * turnRate * dt;
   // --- jump state machine
   let J = s.jump;
@@ -2842,7 +3045,7 @@ const birds = (() => {
   const groundSpot = () => {
     for (let i = 0; i < 50; i++) {
       const a = Math.random() * TAU, r = 18 + Math.random() * 140, x = 10 + Math.cos(a) * r, z = 30 + Math.sin(a) * r;
-      if (!inWater(x, z) && bankMask(x, z) < 0.01 && Math.hypot(x - STABLE.x, z - STABLE.z + 13) > 42 && !fences.some(f => Math.hypot(f.x - x, f.z - z) < 8)) return new V3(x, 0, z);
+      if (!inWater(x, z) && bankMask(x, z) < 0.01 && Math.hypot(x - STABLE.x, z - STABLE.z + 13) > 42 && (Math.abs(x - TRAIL.x) > TRAIL.hx + 2 || Math.abs(z - TRAIL.z) > TRAIL.hz + 2) && !fences.some(f => Math.hypot(f.x - x, f.z - z) < 8)) return new V3(x, 0, z);
     }
     return new V3(60, 0, -20);
   };
@@ -3231,6 +3434,7 @@ function updateBuildings(dt) {
 
 function updateWorld(dt, time) {
   updateHay(dt);
+  updateTrail(dt, time);
   updateBuildings(dt);
   updateAutoWeather(dt);
   updateEnv(dt);
@@ -3310,7 +3514,7 @@ addEventListener('resize', () => {
 
 // debug hooks
 let simT = 1000;
-window.__horse = { get st() { return st; }, get player() { return player; }, horses, switchToHorse, actionE, letGo, setPerson, haySpots, walls, spacePress, spaceRelease, setCourse, groundH, setEnv, get wx() { return { auto: wxAuto, timer: wxTimer, idx: wxIdx, rate: envRate }; }, setWeatherAuto, pickWeather, herd, birds, setGait, startJump, fences, colliders, resetCourse, score, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) { simT += dt; stepWorld(dt, simT); } renderer.render(scene, camera); }, camera, scene, get H() { return H; }, setCam: (yawOff, pitch, dist) => { camYawOff = yawOff; camPitch = pitch; camDist = dist; lastDrag = 1e9; } };
+window.__horse = { SEESAW, SLALOM, TRAIL, get st() { return st; }, get player() { return player; }, horses, switchToHorse, actionE, letGo, setPerson, haySpots, walls, spacePress, spaceRelease, setCourse, groundH, setEnv, get wx() { return { auto: wxAuto, timer: wxTimer, idx: wxIdx, rate: envRate }; }, setWeatherAuto, pickWeather, herd, birds, setGait, startJump, fences, colliders, resetCourse, score, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) { simT += dt; stepWorld(dt, simT); } renderer.render(scene, camera); }, camera, scene, get H() { return H; }, setCam: (yawOff, pitch, dist) => { camYawOff = yawOff; camPitch = pitch; camDist = dist; lastDrag = 1e9; } };
 </script>
 </body>
 </html>
