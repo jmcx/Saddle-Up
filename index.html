@@ -1761,20 +1761,24 @@ function buildTack(R, bodyGeo, headGeo, mats) {
   const { P, D } = bodyGeo.userData; const p = new V3(), d = new V3();
   const at = (z) => { let bt = 0, bd = 1e9; for (let i = 0; i <= 200; i++) { P.getPoint(i / 200, p); if (Math.abs(p.z - z) < bd) { bd = Math.abs(p.z - z); bt = i / 200; } } P.getPoint(bt, p); D.getPoint(bt, d); return { y: p.y, top: p.y + d.y, w: d.x, ht: d.y, hb: d.z }; };
   const seat = at(0.08);
+  // named pieces, so features can take tack off, put it back and re-colour it (js/features/care.js)
+  const parts = { pad: [], saddle: [], girth: [], bridle: [], noseband: [], flash: [] };
 
-  add(body, shellPatch(bodyGeo, -0.24, 0.32, 0.24 * Math.PI, 0.76 * Math.PI, 0.007, { color: 0xf1eee6 }));
-  add(body, shellPatch(bodyGeo, -0.22, 0.3, 0.3 * Math.PI, 0.7 * Math.PI,
+  parts.pad.push(add(body, shellPatch(bodyGeo, -0.24, 0.32, 0.24 * Math.PI, 0.76 * Math.PI, 0.007, { color: 0xf1eee6 })));
+  parts.saddle.push(add(body, shellPatch(bodyGeo, -0.22, 0.3, 0.3 * Math.PI, 0.7 * Math.PI,
     (zn, an) => 0.02 + 0.075 * Math.exp(-(((zn - 0.04) / 0.1) ** 2)) + 0.05 * Math.exp(-(((zn - 0.95) / 0.09) ** 2)) + 0.015 * Math.sin(an * Math.PI),
-    { color: leather }));
+    { color: leather })));
   for (const [a0, a1] of [[0.1 * Math.PI, 0.32 * Math.PI], [0.68 * Math.PI, 0.9 * Math.PI]])
-    add(body, shellPatch(bodyGeo, 0.0, 0.3, a0, a1, 0.016, { color: leather, rows: 6, cols: 8 }));
-  add(body, shellPatch(bodyGeo, 0.2, 0.26, -Math.PI * 0.95, Math.PI * 0.12, 0.012, { color: dark, rows: 2, cols: 24 }));
-  add(body, shellPatch(bodyGeo, 0.2, 0.26, Math.PI * 0.88, Math.PI * 1.05, 0.012, { color: dark, rows: 2, cols: 6 }));
+    parts.saddle.push(add(body, shellPatch(bodyGeo, 0.0, 0.3, a0, a1, 0.016, { color: leather, rows: 6, cols: 8 })));
+  parts.girth.push(add(body, shellPatch(bodyGeo, 0.2, 0.26, -Math.PI * 0.95, Math.PI * 0.12, 0.012, { color: dark, rows: 2, cols: 24 })));
+  parts.girth.push(add(body, shellPatch(bodyGeo, 0.2, 0.26, Math.PI * 0.88, Math.PI * 1.05, 0.012, { color: dark, rows: 2, cols: 6 })));
 
   const HL = B.headL;
-  add(head, shellPatch(headGeo, 0.02 * HL, 0.05 * HL, -Math.PI, Math.PI, 0.006, { color: dark, rows: 2, cols: 28 }));
-  add(head, shellPatch(headGeo, 0.39 * HL, 0.43 * HL, -Math.PI, Math.PI, 0.006, { color: dark, rows: 2, cols: 28 }));
-  for (const a of [0, Math.PI]) add(head, shellPatch(headGeo, 0.03 * HL, 0.42 * HL, a - 0.06, a + 0.06, 0.005, { color: dark, rows: 10, cols: 2 }));
+  parts.bridle.push(add(head, shellPatch(headGeo, 0.02 * HL, 0.05 * HL, -Math.PI, Math.PI, 0.006, { color: dark, rows: 2, cols: 28 })));
+  parts.noseband.push(add(head, shellPatch(headGeo, 0.39 * HL, 0.43 * HL, -Math.PI, Math.PI, 0.006, { color: dark, rows: 2, cols: 28 })));
+  for (const a of [0, Math.PI]) parts.bridle.push(add(head, shellPatch(headGeo, 0.03 * HL, 0.42 * HL, a - 0.06, a + 0.06, 0.005, { color: dark, rows: 10, cols: 2 })));
+  const flash = add(head, shellPatch(headGeo, 0.47 * HL, 0.5 * HL, -Math.PI, Math.PI, 0.007, { color: dark, rows: 2, cols: 28 }));   // flash strap, off by default
+  flash.visible = false; parts.flash.push(flash);
   const bits = [];
   for (const sx of [1, -1]) {
     const ring = add(head, new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.004, 6, 16), new THREE.MeshStandardMaterial({ color: 0xc9c9c9, metalness: 0.9, roughness: 0.3 })));
@@ -1796,7 +1800,8 @@ function buildTack(R, bodyGeo, headGeo, mats) {
   for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) { const m = new THREE.Mesh(reinGeo, reinMat); m.castShadow = true; scene.add(m); R.extras.push(m); reins[r].push(m); }
   const neck = at(0.42);
   R.tack = {
-    bits, reins, stirrups, seat,
+    bits, reins, stirrups, seat, parts, reinMat,
+    halter: false,                                                               // true: bridle off, a head collar and one lead rope instead
     seatPos: new V3(0, seat.top + 0.045, 0.08),                                  // body-local: where the rider's pelvis sits
     handsBody: new V3(0.085, at(0.45).top + 0.17, 0.5),                          // body-local: where the hands hold the reins
     restBody: new V3(0, neck.top + 0.03, 0.42),                                  // body-local: reins resting on the neck
@@ -1990,6 +1995,8 @@ function updateTack(R, s, g, dt, time) {
   R.root.updateMatrixWorld(true);
   const held = mine && P.mode !== 'free';
   for (let k = 0; k < 2; k++) {
+    if (t.halter) { const on = k === 0 && held; for (const m of t.reins[k]) m.visible = on; if (!on) continue; }
+    else if (!t.reins[k][0].visible) for (const m of t.reins[k]) m.visible = true;
     t.bits[k].getWorldPosition(_w1);
     if (held) P.limbs[P.mode === 'ride' ? (k === 0 ? 1 : -1) : -1].hand.getWorldPosition(_w2);
     else { _w2.copy(t.restBody); _w2.x = (k === 0 ? 1 : -1) * 0.06; R.body.localToWorld(_w2); }
