@@ -1646,7 +1646,9 @@ function resetFence(f) {
 
 // ---------------------------------------------------------------- loft helper (smooth organic tubes)
 // sections: { p:[x,y,z], w (half width), h | ht/hb (half height above/below), c: colour }
+let loftDetail = 1;            // buildHorse(B, { detail }) scales the tube resolution (background animals use < 1)
 function loft(secs, { radial = 28, steps = 10, colorFn = null, color = 0x1c1511 } = {}) {
+  if (loftDetail !== 1) { radial = Math.max(8, Math.round(radial * loftDetail)); steps = Math.max(3, Math.round(steps * loftDetail)); }
   const N = secs.length;
   const P = new THREE.CatmullRomCurve3(secs.map(s => new V3(...s.p)), false, 'catmullrom', 0.5);
   const D = new THREE.CatmullRomCurve3(secs.map(s => new V3(s.w, s.ht ?? s.h, s.hb ?? s.h)), false, 'catmullrom', 0.5);
@@ -1765,12 +1767,18 @@ const BLAZES = {
     return (sa > 0 ? 1 : 0) * (1 - smooth(clamp((Math.abs(ca) - wdt + 0.07) / 0.07, 0, 1)))
       * smooth(clamp((t - 0.17) / 0.06, 0, 1)) * (1 - smooth(clamp((t - 0.58) / 0.08, 0, 1)));
   },
+  star: (t, ca, sa) => (sa > 0 ? 1 : 0) * (1 - smooth(clamp((Math.abs(ca) - 0.2) / 0.08, 0, 1)))
+      * smooth(clamp((t - 0.13) / 0.04, 0, 1)) * (1 - smooth(clamp((t - 0.25) / 0.04, 0, 1))),
+  face: (t, ca, sa) => (1 - smooth(clamp((Math.abs(ca) - 0.55 + 0.1 * sa) / 0.1, 0, 1))) * (sa > -0.2 ? 1 : 0)
+      * smooth(clamp((t - 0.12) / 0.05, 0, 1)) * (1 - smooth(clamp((t - 0.86) / 0.05, 0, 1))),
 };
 
 function mkMat(o) { return new THREE.MeshPhysicalMaterial(o); }
 
+// opts: { tack: false (no saddle/bridle), detail (tube resolution, 1 = full) }. B.bodyL (barrel length) and B.eyeS (eye size) default to 1
 function buildHorse(B, opts = {}) {
-  const k = B.k, kw = B.kw;
+  const k = B.k, kw = B.kw, BL = B.bodyL ?? 1;
+  loftDetail = opts.detail ?? 1;
   const COAT_D = new THREE.Color(B.coat).multiplyScalar(0.72);
   const POINTS = B.points;
   const pattern = B.pattern ? PATTERNS[B.pattern] : null;
@@ -1811,13 +1819,13 @@ function buildHorse(B, opts = {}) {
     { p: [0, 1.24, 0.62], w: 0.23, ht: 0.28, hb: 0.33 },
     { p: [0, 1.22, 0.80], w: 0.17, ht: 0.18, hb: 0.24 },
     { p: [0, 1.22, 0.88], w: 0.04, h: 0.05 },
-  ].map(s => ({ ...s, w: s.w * BW, ht: (s.ht ?? s.h) * BH, hb: (s.hb ?? s.h) * BH })), { radial: 40, steps: 12, color: B.coat, colorFn: cf('body', new V3()) });
+  ].map(s => ({ ...s, p: [0, s.p[1], s.p[2] * BL], w: s.w * BW, ht: (s.ht ?? s.h) * BH, hb: (s.hb ?? s.h) * BH })), { radial: 40, steps: 12, color: B.coat, colorFn: cf('body', new V3()) });
   body.add(mk(bodyGeo));
 
   // neck
   const neck = new THREE.Group();
   neck.rotation.order = 'YXZ';
-  neck.position.set(0, 1.30, 0.55);
+  neck.position.set(0, 1.30, 0.55 * BL);
   body.add(neck);
   const NL = B.neckL, NW = B.neckW;
   const neckGeo = loft([
@@ -1837,7 +1845,7 @@ function buildHorse(B, opts = {}) {
   head.position.set(0, 0.64 * NL, 0.52 * NL);
   head.scale.setScalar(B.headS);
   neck.add(head);
-  const headOrigin = new V3(0, 1.30 + 0.64 * NL, 0.55 + 0.52 * NL);
+  const headOrigin = new V3(0, 1.30 + 0.64 * NL, 0.55 * BL + 0.52 * NL);
   const eyeY = 0.035, eyeZ = 0.14 * HL;
   const headExtra = (out, t, ca, sa, v) => {
     if (B.blaze) { const m = BLAZES[B.blaze](t, ca, sa); if (m > 0) out.lerp(_white, m); }
@@ -1873,7 +1881,7 @@ function buildHorse(B, opts = {}) {
   mouth.position.set(0, -0.04, 0.46 * HL); head.add(mouth); mats.push(mouth.material);
   for (const sx of [1, -1]) {
     const eye = mk(new THREE.SphereGeometry(0.022, 16, 12), eyeMat);
-    eye.scale.set(0.8, 1, 1.15); eye.position.set(sx * 0.085, eyeY, eyeZ); head.add(eye);
+    eye.scale.set(0.8, 1, 1.15).multiplyScalar(B.eyeS ?? 1); eye.position.set(sx * 0.085, eyeY, eyeZ); head.add(eye);
     const nos = mk(new THREE.SphereGeometry(0.018, 12, 8), nostrilMat);
     nos.scale.set(0.6, 1.2, 0.9); nos.position.set(sx * 0.045, 0.005, 0.585 * HL); head.add(nos);
   }
@@ -1954,7 +1962,7 @@ function buildHorse(B, opts = {}) {
     const lens = [0.11, 0.1, 0.11, 0.11, 0.11, 0.11, 0.1, 0.09].map(l => l * B.tailL);
     const wid = (tuft ? [0.045, 0.034, 0.028, 0.025, 0.024, 0.026, 0.045, 0.06, 0.025] : [0.05, 0.055, 0.07, 0.08, 0.085, 0.08, 0.065, 0.045, 0.02])
       .map((w, i) => i === 0 ? w : w * B.tailW);
-    let parent = new THREE.Group(); parent.position.set(0, 1.40, -0.93); body.add(parent);
+    let parent = new THREE.Group(); parent.position.set(0, 1.40, -0.93 * BL); body.add(parent);
     for (let i = 0; i < lens.length; i++) {
       const g = new THREE.Group();
       if (i > 0) g.position.y = -lens[i - 1];
@@ -1976,7 +1984,7 @@ function buildHorse(B, opts = {}) {
   function buildLeg(front, left, sock) {
     const sx = left ? 1 : -1;
     const root = new THREE.Group();
-    root.position.set(sx * (front ? 0.15 : 0.17) * BW, 1.30, front ? 0.50 : -0.62);
+    root.position.set(sx * (front ? 0.15 : 0.17) * BW, 1.30, (front ? 0.50 : -0.62) * BL);
     root.scale.set(kw, k, k);
     body.add(root);
     const lowCol = sock ? WHITE : POINTS;
@@ -2080,6 +2088,7 @@ function buildHorse(B, opts = {}) {
   const legs = [buildLeg(true, true, B.socks[0]), buildLeg(true, false, B.socks[1]), buildLeg(false, true, B.socks[2]), buildLeg(false, false, B.socks[3])]; // LF RF LH RH
 
   const R = { B, root: horse, body, neck, head, jaw, ears, tailSegs, legs, mats, lift: 1.30 * (k - 1), extras: [] };
+  loftDetail = 1;
   if (opts.tack !== false) buildTack(R, bodyGeo, headGeo, mats);
   return R;
 }
@@ -3594,7 +3603,9 @@ const herd = [1, 3, 4].map((bi, i) => {
   colliders.push(...cols);
   return { R, s, cols, mode: 'graze', timer: 4 + Math.random() * 10, tx: 0, tz: 0, callT: 20 + Math.random() * 40 };
 });
+SU.herd = herd;              // js/features/pasture.js takes the herd over (lighter rigs, distance LOD) and sets SU.herdOwned
 function updateHerd(dt, time) {
+  if (SU.herdOwned) return;
   for (const h of herd) {
     const { R, s } = h, B = R.B;
     h.timer -= dt;
