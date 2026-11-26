@@ -635,9 +635,6 @@ const looseRails = [];
   // four fences down each long side; the turns at the ends are left clear
   const ponyTh = [-0.56, -0.19, 0.19, 0.56, Math.PI - 0.56, Math.PI - 0.19, Math.PI + 0.19, Math.PI + 0.56];
   ponyPlan.forEach(([type, h, spread], i) => addFence({ type, h, spread, course: 'pony', label: 'P' + (i + 1), ...onOval(PONY_ARENA, ponyTh[i]) }, i + 3));
-  // two small jumps down the middle of the indoor arena
-  addFence({ type: 'crossrail', h: 0.5, x: STABLE.x - 8, z: STABLE.z - 24, ang: Math.PI / 2, course: 'stable', label: 'I1' }, 1);
-  addFence({ type: 'vertical', h: 0.6, x: STABLE.x + 8, z: STABLE.z - 24, ang: Math.PI / 2, course: 'stable', label: 'I2' }, 4);
   // cross-country fences
   let xcN = 0;
   XC_PLAN.forEach((p, i) => { if (p.type !== 'bank') addFence({ ...p, xc: true, course: 'xc', label: 'XC' + (++xcN) }, i + 2); else xcN++; });
@@ -3568,15 +3565,18 @@ Object.assign(SU, {
   util: { clamp, lerp, damp, smooth, TAU },
   world: { groundH, colliders, walls, fences, haySpots, roofs, interiors, stallBoxes, places: PLACES, STABLE, TRAIL, COURSE, PONY_ARENA, MEADOW },
   horses, BREEDS, PERSONS, buildHorse, buildPerson, newRigState, updateRig, horseOf,
-  get H() { return H; }, get st() { return st; }, get player() { return player; }, get gait() { return gait; },
-  get horse() { return horseOf(H); },                          // the horse you ride, lead or last held: { i, B, R, s, box, name }
-  get course() { return COURSES[courseIdx].key; },
   // where you are standing (on foot) or sitting (riding), in world coordinates
   personPos(out = {}) { const P = player; if (P.mode === 'free' || P.mode === 'toTake') { out.x = P.x; out.z = P.z; } else { P.group.getWorldPosition(_pp); out.x = _pp.x; out.z = _pp.z; } return out; },
   camFocus,
   actions: { actionE, letGo, takeLead, switchToHorse, setGait, setCourse, resetCourse, brakeHorse, sendHome, setPerson, placeFree, nearbyHorse, collidePerson, seatPerson, standAtLead, onModeChanged },
   audio: { initAudio, audioOk, env, noiseHit, hoofSound, neigh, bray, snort, munch, get ctx() { return actx; }, get out() { return master; }, get muted() { return muted; } },
   toast,
+});
+// live values (defined as accessors: Object.assign would copy them once)
+Object.defineProperties(SU, {
+  H: { get: () => H }, st: { get: () => st }, player: { get: () => player }, gait: { get: () => gait },
+  horse: { get: () => horseOf(H) },                            // the horse you ride, lead or last held: { i, B, R, s, box, name }
+  course: { get: () => COURSES[courseIdx].key },
 });
 // each feature is a module exporting init(SU); a feature that fails to load never takes the game down with it
 const FEATURES = ['ui', 'galop', 'care', 'safety', 'figures', 'pasture'];
