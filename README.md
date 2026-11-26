@@ -107,7 +107,7 @@ On foot, stand by a horse and press F ("S'occuper de…") for its care menu.
 
 ### Safety: never walk behind a horse
 
-On foot, if you go close behind a horse's hindquarters, it pins its ears back as a warning. Stay there and it kicks, and you wake up in hospital with a short lesson on how to go round a horse safely. It applies to every horse and pony, including the mare and foal.
+On foot, if you go close behind a horse's hindquarters, it pins its ears back as a warning. Stay there and it kicks, and you wake up in hospital with a short lesson on how to go round a horse safely. It applies to every horse and pony, including the mare and foal. The horses in the écurie stand with their hindquarters to the box door: walk in (you speak to the horse as you come in) and pass along its shoulder; running in still surprises it.
 
 ### Figures in the manège
 

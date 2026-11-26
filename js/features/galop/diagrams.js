@@ -95,7 +95,7 @@ const HOOF_SOLE = [
   { id: 'pince', name: 'la pince', at: [0.5, 0.11], off: [0.16, -0.02], why: 'La pince est le devant du sabot.' },
   { id: 'sole', name: 'la sole', at: [0.375, 0.37], off: [0.0, 0.0], why: 'La sole est le dessous du sabot, autour de la fourchette.' },
   { id: 'fourchette', name: 'la fourchette', at: [0.5, 0.5], off: [0.0, 0.0], why: 'La fourchette est le triangle souple au milieu du dessous du sabot. Elle amortit les chocs.' },
-  { id: 'lacunes', name: 'les lacunes', at: [0.425, 0.68], off: [-0.1, 0.06], why: 'Les lacunes sont les creux de chaque côté de la fourchette et au milieu. On les nettoie bien avec le cure-pied.' },
+  { id: 'lacunes', name: 'les lacunes', at: [0.425, 0.68], off: [-0.1, 0.06], why: 'Les lacunes sont les creux de chaque côté de la fourchette et au milieu. On les nettoie bien avec le cure-pieds.' },
   { id: 'talons', name: 'les talons', at: [0.355, 0.9], off: [-0.12, 0.0], why: 'Les talons sont à l’arrière du sabot.' },
 ];
 
@@ -238,6 +238,8 @@ function makeHorse(SU, colours) {
   const s = SU.newRigState(x, z, 0), ctl = { target: 0, turnIn: 0, player: false, vol: 0 };
   for (let i = 0; i < 40; i++) SU.updateRig(R, s, ctl, 1 / 60, 10 + i / 60);
   for (const e of R.ears) { e.rotation.x = e.userData.base; e.rotation.z = 0; }
+  // alert, like a horse being shown: the resting pose carries the head low, which hides the line of the neck
+  R.neck.rotation.set(-0.1, 0, 0); R.head.rotation.set(0.95, 0, 0); R.jaw.rotation.set(0, 0, 0);
   R.root.position.set(0, R.root.position.y - s.rootY, 0); R.root.rotation.set(0, 0, 0);
   R.root.updateMatrixWorld(true);
   return R;
@@ -260,8 +262,8 @@ function anchor(R, at, out) { return group(R, at[0]).localToWorld(out.set(at[1],
 // camera placement per view; the horse's right side faces the camera (-x), so the head is on the right of the picture
 function frame(SU, R, view, cam) {
   const T = SU.THREE, S = R.B.S, c = new T.Vector3(), up = new T.Vector3(0, 1, 0);
-  if (view === 'robe') { c.set(0, 1.0 * S, 0.12); cam.fov = 26; cam.position.set(-5.1 * S, 1.3 * S, 0.12); }
-  else if (view === 'side') { c.set(0, 1.05 * S, 0.05); cam.fov = 26; cam.position.set(-5.8 * S, 1.4 * S, 0.05); }
+  if (view === 'robe') { c.set(0, 1.07 * S, 0.12); cam.fov = 26; cam.position.set(-5.1 * S, 1.37 * S, 0.12); }
+  else if (view === 'side') { c.set(0, 1.12 * S, 0.05); cam.fov = 26; cam.position.set(-5.8 * S, 1.47 * S, 0.05); }
   else if (view === 'legs') { c.set(0, 0.6 * S, -0.1); cam.fov = 26; cam.position.set(-5.6 * S, 0.9 * S, -0.1); }
   else if (view === 'head') {
     R.head.localToWorld(c.set(0, -0.01, 0.27));

@@ -76,6 +76,7 @@ export function initPre(SU) {
       h.R = makeAnimal(SU, B, 0.6); SU.scene.add(h.R.root);
       const a = { R: h.R, s: h.s, B, name: B.name, cols: h.cols, mode: 'idle', t: rnd(3, 20), brain: grazer, post: lookPost() };
       light.push(a); all.push(a);
+      SU.features.safety?.watch?.({ R: h.R, s: h.s, B, name: B.name });
     }
   }
 
@@ -83,7 +84,7 @@ export function initPre(SU) {
   const base = SU.BREEDS[0];
   const mareB = { ...base, name: 'Selle Français', kind: 'Horse', S: 1.03, k: 1.02, mane: 'flat', maneL: 1.05, ...MARE, pattern: null };
   const foalB = { ...base, name: 'Poulain', kind: 'Foal', ...FOAL, pattern: null,
-    S: 0.46, k: 1.36, kw: 0.84, bodyW: 0.8, bodyH: 0.84, bodyL: 0.78, neckL: 0.7, neckW: 0.84, headS: 1.55, headL: 0.74, earL: 1.12, earW: 1.05, eyeS: 1.6,
+    S: 0.5, k: 1.36, kw: 0.84, bodyW: 0.8, bodyH: 0.84, bodyL: 0.78, neckL: 0.7, neckW: 0.84, headS: 1.55, headL: 0.74, earL: 1.12, earW: 1.05, eyeS: 1.6,
     speed: 0.95, graze: 0.85, mane: 'upright', maneL: 1.35, forelock: 0.4, tail: 'full', tailL: 0.42, tailW: 1.15, feather: false };
   const spawn = (B, x, z, yaw, detail) => {
     const R = makeAnimal(SU, B, detail), s = SU.newRigState(x, z, yaw); s.graze = 1; s.idle = 8;
@@ -191,7 +192,7 @@ export function initPre(SU) {
     if (Cc && Cc.isTacked && (Cc.state(h).saddled || Cc.state(h).bridled)) {
       untacked = true;
       Cc.setTacked(h, false);
-      SU.toast('On enlève la selle et le filet avant de lâcher un cheval au pré.', 'info');
+      setTimeout(() => SU.toast('On enlève la selle et le filet avant de lâcher un cheval au pré.', 'info'), 0);   // after the core's "You let go"
     }
     if (Cc) Cc.setGirthed(h, false);
     const a = { R: h.R, s: h.s, B: h.B, name: h.name, club: h, mode: 'idle', t: rnd(4, 8), ctl: { target: 0, turnIn: 0 }, v: 0, turn: 0, brainAcc: 0 };
@@ -209,7 +210,7 @@ export function initPre(SU) {
     const a = out.get(h); if (!a) return;
     out.delete(h); all.splice(all.indexOf(a), 1);
     if (care()) care().setGirthed(h, false);
-    if (!quiet) SU.toast(`Tu as attrapé ${h.name}. Ramène-le à son box.`, 'good');
+    if (!quiet) setTimeout(() => SU.toast(`Tu as attrapé ${h.name}. Ramène-le à son box.`, 'good'), 700);   // after the core's "Leading…"
     SU.emit('pasture', 'in', h);
   }
   SU.on('mode', (mode, prev) => {
@@ -221,7 +222,7 @@ export function initPre(SU) {
 
   // F at the gate: lead it in, turn it to face the gate and let go, all in one
   SU.interact.add({
-    id: 'pasture-release', icon: '🌿', radius: 5, modes: ['lead'], pos: gate,
+    id: 'pasture-release', icon: '🌿', radius: 5, modes: ['lead'], pos: gate, priority: 1,   // before the foal: you came to turn it out
     label: () => `Lâcher ${SU.horse?.name ?? ''} au pré`, when: () => !!SU.horse && SU.horses.includes(SU.horse) && P().mode === 'lead',
     action: () => {
       const h = SU.horse, s = h.s, yaw = gate.yaw + Math.PI;
@@ -290,7 +291,7 @@ export function initPre(SU) {
     const from = cam.position.clone(), look = new THREE.Vector3(), tgt = new THREE.Vector3(), pos = new THREE.Vector3();
     let t = 0, i = -1, nextT = 0;
     const side = (() => { const ms = mare.s, ang = Math.atan2(cam.position.x - ms.x, cam.position.z - ms.z); return ang; })();
-    const show = (k) => { i = k; el.innerHTML = `<div style="font-size:13px;opacity:.65;margin-bottom:4px">La jument ${MARE.name} et son poulain ${FOAL.name}</div><b>${FACTS[k]}</b><div style="font-size:12px;opacity:.55;margin-top:6px">Touche une touche pour revenir</div>`; SU.ui.say?.(FACTS[k]); nextT = t + 5; };
+    const show = (k) => { i = k; el.innerHTML = `<div style="font-size:13px;opacity:.65;margin-bottom:4px">La jument ${MARE.name} et son poulain ${FOAL.name}</div><b>${FACTS[k]}</b><div style="font-size:12px;opacity:.55;margin-top:6px">Touche l’écran ou appuie sur une touche pour revenir</div>`; SU.ui.say?.(FACTS[k]); nextT = t + 5; };
     if (foal.mode !== 'suckle' && Math.hypot(foal.s.x - mare.s.x, foal.s.z - mare.s.z) < 6) { foal.mode = 'suckle'; foal.side = 1; foal.t = 12; foal.latched = false; }
     show(0);
     const end = () => {

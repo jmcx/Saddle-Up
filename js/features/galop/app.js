@@ -320,24 +320,52 @@ function picBox(d, opts = {}) {
   const img = new Image(); img.src = pic.url; img.alt = d.title; img.style.aspectRatio = String(pic.ar); box.append(img);
   box.style.maxWidth = `min(720px, ${opts.vh ?? 46}vh * ${pic.ar})`;   // keep the answers in view on short screens
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); box.append(svg);
-  const parts = opts.parts ?? d.parts, badges = {};
+  const parts = opts.parts ?? d.parts, badges = {}, items = [];
+  const svgEl = (tag, attrs) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v)); return e; };
   parts.forEach((p, i) => {
     const [x, y] = pic.pts[p.id], off = p.off ?? [0, 0];
     const bx = Math.min(0.96, Math.max(0.04, x + off[0])), by = Math.min(0.94, Math.max(0.06, y + off[1] * pic.ar));
-    if (off[0] || off[1]) {
-      const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      Object.entries({ x1: x * 100 + '%', y1: y * 100 + '%', x2: bx * 100 + '%', y2: by * 100 + '%', stroke: '#243a2c', 'stroke-width': 2.5, 'stroke-linecap': 'round' }).forEach(([k, v]) => ln.setAttribute(k, v));
-      svg.append(ln);
-      const dot = el('div', 'g1-dot'); dot.style.left = x * 100 + '%'; dot.style.top = y * 100 + '%'; box.append(dot);
-    }
+    // every badge gets a leader line and a dot, shown only when the badge sits away from its point
+    const ln = svgEl('line', { x1: x * 100 + '%', y1: y * 100 + '%', stroke: '#243a2c', 'stroke-width': 2.5, 'stroke-linecap': 'round' }); svg.append(ln);
+    const dot = el('div', 'g1-dot'); dot.style.left = x * 100 + '%'; dot.style.top = y * 100 + '%'; box.append(dot);
     const n = opts.numbers ? opts.numbers.get(p.id) : i + 1;
     const b = el(opts.click ? 'button' : 'span', 'g1-badge', String(n)); if (opts.click) b.type = 'button';
-    b.style.left = bx * 100 + '%'; b.style.top = by * 100 + '%';
     b.setAttribute('aria-label', `numéro ${n}`);
     if (opts.click) b.addEventListener('click', () => opts.click(p.id));
     if (opts.hl === p.id) b.classList.add('hl');
     box.append(b); badges[p.id] = b;
+    items.push({ x, y, bx, by, ln, dot, b });
   });
+  // badges are a fixed size in pixels, so two points close together can put one badge on top of another (more so on a phone):
+  // push overlapping badges apart in pixel space, then place them, their leader lines and dots
+  function layout() {
+    const W = box.clientWidth, H = box.clientHeight;
+    const pos = items.map(it => ({ x: it.bx * W, y: it.by * H, w: (it.b.offsetWidth || 30) + 6, h: (it.b.offsetHeight || 30) + 6 }));
+    if (W && H) for (let iter = 0; iter < 60; iter++) {
+      let moved = false;
+      for (let i = 0; i < pos.length; i++) for (let j = i + 1; j < pos.length; j++) {
+        const a = pos[i], c = pos[j], ox = (a.w + c.w) / 2 - Math.abs(a.x - c.x), oy = (a.h + c.h) / 2 - Math.abs(a.y - c.y);
+        if (ox <= 0 || oy <= 0) continue;
+        moved = true;
+        // separate along the axis that needs less movement; ties go sideways
+        if (ox < oy) { const sx = (a.x < c.x || (a.x === c.x && i < j)) ? -1 : 1; a.x += sx * ox / 2; c.x -= sx * ox / 2; }
+        else { const sy = a.y <= c.y ? -1 : 1; a.y += sy * oy / 2; c.y -= sy * oy / 2; }
+      }
+      for (const q of pos) { q.x = Math.min(W - q.w / 2, Math.max(q.w / 2, q.x)); q.y = Math.min(H - q.h / 2, Math.max(q.h / 2, q.y)); }
+      if (!moved) break;
+    }
+    items.forEach((it, i) => {
+      const fx = W ? pos[i].x / W : it.bx, fy = H ? pos[i].y / H : it.by;
+      it.b.style.left = fx * 100 + '%'; it.b.style.top = fy * 100 + '%';
+      const away = W ? Math.hypot(pos[i].x - it.x * W, pos[i].y - it.y * H) > 10 : (fx !== it.x || fy !== it.y);
+      it.ln.setAttribute('x2', fx * 100 + '%'); it.ln.setAttribute('y2', fy * 100 + '%');
+      it.ln.style.display = it.dot.style.display = away ? '' : 'none';
+    });
+  }
+  layout();
+  const relayout = () => { if (box.isConnected) layout(); };
+  img.addEventListener('load', relayout); requestAnimationFrame(relayout);
+  if (window.ResizeObserver) new ResizeObserver(relayout).observe(box);
   box.badges = badges;
   return box;
 }
