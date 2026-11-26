@@ -149,6 +149,21 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const damp = (a, b, k, dt) => lerp(a, b, 1 - Math.exp(-k * dt));
 const smooth = (t) => t * t * (3 - 2 * t);
 const TAU = Math.PI * 2;
+// ---------------------------------------------------------------- feature API (see js/features/README.md)
+// Everything added on top of the core game lives in js/features/*.js and talks to the game through this object.
+const SU = window.SU = {
+  modal: 0, pauseCount: 0,                   // open panels: game keys are ignored while modal > 0, the simulation stops while pauseCount > 0
+  keyHooks: [],                              // (key, event) => true to swallow the key
+  guards: { mount: [] },                     // (horse) => message string to refuse getting on, or falsy
+  updaters: [], camOverride: null,
+  handlers: {},
+  on(ev, fn) { (this.handlers[ev] ??= []).push(fn); },
+  emit(ev, ...a) { for (const fn of this.handlers[ev] ?? []) { try { fn(...a); } catch (e) { console.error('[SU]', ev, e); } } },
+  // per-frame callback. opts.near = { x, z, r }: only runs while you are within r metres (opts.onRange(inside) fires on entering/leaving);
+  // opts.hz: run at most this many times a second (dt is then the time since the last call)
+  onUpdate(fn, opts = {}) { const u = { fn, acc: 0, inside: null, ...opts }; this.updaters.push(u); return u; },
+  features: {},
+};
 function hash3(v) { const s = Math.sin(v.x * 127.1 + v.y * 311.7 + v.z * 74.7) * 43758.5453; return s - Math.floor(s); }
 
 // ---------------------------------------------------------------- renderer / scene
@@ -685,6 +700,7 @@ const haySpots = [];         // hay a horse can eat: { x, z, y, reach, amount, l
 const roofs = [];            // roofs fade out when you ride inside: { mesh, region }
 const interiors = [];        // world-space floor areas under a roof (camera stays inside these)
 const stallBoxes = [];       // box interiors for the resident horses: { x, z, yaw, hay }
+const PLACES = {};           // named spots in the yard, in world coordinates, for the feature modules (SU.world.places)
 (() => {
   const X0 = STABLE.x, Z0 = STABLE.z, Y0 = STABLE.y;
   const canvasTex = (w, h, draw) => {
@@ -916,6 +932,7 @@ const stallBoxes = [];       // box interiors for the resident horses: { x, z, y
   for (const [ch, x, z, ry] of [['A', AX0 + 0.14, -24, Math.PI / 2], ['C', AX1 - 0.14, -24, -Math.PI / 2], ['K', -14, AZ0 + 0.14, 0], ['E', 0, AZ0 + 0.14, 0], ['H', 14, AZ0 + 0.14, 0],
     ['F', -14, AZ1 - 0.14, Math.PI], ['B', 6, AZ1 - 0.14, Math.PI], ['M', 14, AZ1 - 0.14, Math.PI]]) {
     const b = textBoard(ch, 0.5, 0.5, '#f4f1e8', '#1c1c1c'); place(b, x, 1.0, z, ry);
+    (PLACES.arenaLetters ??= {})[ch] = { x: X0 + x, z: Z0 + z };
   }
 
   // ---- hay: loose piles in the yard, a round bale in a feeder, and a stack of small bales
@@ -954,6 +971,19 @@ const stallBoxes = [];       // box interiors for the resident horses: { x, z, y
   // water trough
   box(mats.metalGrey, 2.0, 0.5, 0.6, 18, 0.25, 7.5); box(new THREE.MeshStandardMaterial({ color: 0x3e6a76, roughness: 0.1, metalness: 0.3 }), 1.9, 0.02, 0.5, 18, 0.46, 7.5);
   walls.push(toWorldBox(16.9, 19.1, 7.1, 7.9));
+
+  // named places for the feature modules. Keys that are null don't exist in the yard yet.
+  Object.assign(PLACES, {
+    y: Y0,
+    yard: toWorldBox(rx0, rx1, rz0, rz1),
+    barn: toWorldBox(BX0, BX1, -BZ, BZ),
+    aisle: toWorldBox(BX0, BX1, -AZ, AZ),
+    tackRoom: { ...toWorldBox(BX0, ROOM_X, AZ, BZ), door: { x: X0 - 11.7, z: Z0 + AZ } },
+    office: { ...toWorldBox(BX0, ROOM_X, -BZ, -AZ), door: { x: X0 - 11.7, z: Z0 - AZ } },
+    arena: { ...toWorldBox(AX0, AX1, AZ0, AZ1), door: { x: X0, z: Z0 + AZ1 }, letters: PLACES.arenaLetters },
+    trough: { x: X0 + 18, z: Z0 + 7.5 },
+    clubhouse: null, stabulation: null, pasture: null, feedRoom: null, groomingBay: null,
+  });
 
   // merge static pieces and add the stable bars
   for (const [mat, geos] of buckets) { const m = new THREE.Mesh(mergeGeometries(geos), mat); m.castShadow = true; m.receiveShadow = true; root.add(m); }
@@ -2297,8 +2327,10 @@ function onBreedChanged() {
 }
 addEventListener('keydown', (e) => {
   const k = e.key;
+  if (SU.modal > 0) return;                                    // a panel is open: it handles its own keys
   if (k.startsWith('Arrow') || k === ' ') e.preventDefault();
   initAudio();
+  if (!e.repeat) for (const hook of SU.keyHooks) if (hook(k, e)) return;
   if (st) st.idle = 0;
   if (!e.repeat) {
     if (onFoot()) dirTap(k);
@@ -2515,6 +2547,7 @@ function resetCourse(msg = 'Course reset') {
   score.clears = score.faults = 0; updateScore();
   placeAtStart(); st.speed = 0; st.jump = null; st.rear = null; st.eatHay = null; st.stun = 0; st.rvx = st.rvz = 0; st.rootY = groundH(st.x, st.z); setGait(0);
   toast(msg, 'info');
+  SU.emit('reset');
 }
 // switch course: ride to its start, with a clean score
 function setCourse(i) {
@@ -3266,6 +3299,7 @@ function actionE() {
   }
   if (P.mode !== 'ride' && P.mode !== 'lead') return;
   if (st.jump) { pendingAction = actionE; return; }    // mid-jump: do it as soon as you land
+  if (P.mode === 'lead') for (const g of SU.guards.mount) { const msg = g(horseOf(H)); if (msg) { toast(msg, 'warn'); return; } }
   brakeHorse();
   if (P.mode === 'ride') H.root.attach(P.group);
   P.mode = P.mode === 'ride' ? 'toLead' : 'toRide'; P.tr = 0;
@@ -3374,6 +3408,7 @@ function onModeChanged() {
   hudG.forEach((el, k) => { el.textContent = labels[k]; el.hidden = !labels[k] || (k === 4 && onFoot()); });
   if (gait > 2 && onFoot()) setGait(2);
   if (P.mode === 'lead' && P.horse && P.prevMode === 'toLead') toast('Leading on foot · Q to let go', 'info');
+  if (P.mode !== P.prevMode) SU.emit('mode', P.mode, P.prevMode);
   P.prevMode = P.mode;
 }
 function playerControl() {
@@ -3491,15 +3526,29 @@ function stepWorld(dt, time) {
   updateStableHorses(dt, time);
   updateWorld(dt, time);
   updateRails(dt);
-  updateCamera(dt, time);
+  runUpdaters(dt, time);
+  if (SU.camOverride) SU.camOverride(dt, time); else updateCamera(dt, time);
   dust.update(dt); splash.update(dt);
   prints.update(time, envCur.wet);
   updateAmbientAudio(dt, Math.abs(camFocus().speed), envCur.rain);
 }
+function runUpdaters(dt, time) {
+  const F = camFocus();
+  for (const u of SU.updaters) {
+    if (u.near) {
+      const dx = F.x - u.near.x, dz = F.z - u.near.z, inside = dx * dx + dz * dz < u.near.r * u.near.r;
+      if (inside !== u.inside) { u.inside = inside; if (u.onRange) u.onRange(inside); }
+      if (!inside) continue;
+    }
+    let d = dt;
+    if (u.hz) { u.acc += dt; if (u.acc < 1 / u.hz) continue; d = u.acc; u.acc = 0; }
+    try { u.fn(d, time); } catch (e) { console.error('[SU] update', e); u.fn = () => {}; }
+  }
+}
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const time = clock.elapsedTime;
-  stepWorld(dt, time);
+  if (!SU.pauseCount) stepWorld(dt, time);
   hudS.innerHTML = `${(Math.abs(camFocus().speed) * 3.6).toFixed(0)}<small>km/h</small>`;
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -3511,6 +3560,45 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   dust.mat.uniforms.uScale.value = splash.mat.uniforms.uScale.value = innerHeight;
 });
+
+// ---------------------------------------------------------------- feature API: the rest of the game, for js/features/*.js
+const _pp = new V3();
+Object.assign(SU, {
+  THREE, mergeGeometries, scene, camera, renderer, clock, MOBILE,
+  util: { clamp, lerp, damp, smooth, TAU },
+  world: { groundH, colliders, walls, fences, haySpots, roofs, interiors, stallBoxes, places: PLACES, STABLE, TRAIL, COURSE, PONY_ARENA, MEADOW },
+  horses, BREEDS, PERSONS, buildHorse, buildPerson, newRigState, updateRig, horseOf,
+  get H() { return H; }, get st() { return st; }, get player() { return player; }, get gait() { return gait; },
+  get horse() { return horseOf(H); },                          // the horse you ride, lead or last held: { i, B, R, s, box, name }
+  get course() { return COURSES[courseIdx].key; },
+  // where you are standing (on foot) or sitting (riding), in world coordinates
+  personPos(out = {}) { const P = player; if (P.mode === 'free' || P.mode === 'toTake') { out.x = P.x; out.z = P.z; } else { P.group.getWorldPosition(_pp); out.x = _pp.x; out.z = _pp.z; } return out; },
+  camFocus,
+  actions: { actionE, letGo, takeLead, switchToHorse, setGait, setCourse, resetCourse, brakeHorse, sendHome, setPerson, placeFree, nearbyHorse, collidePerson, seatPerson, standAtLead, onModeChanged },
+  audio: { initAudio, audioOk, env, noiseHit, hoofSound, neigh, bray, snort, munch, get ctx() { return actx; }, get out() { return master; }, get muted() { return muted; } },
+  toast,
+});
+// each feature is a module exporting init(SU); a feature that fails to load never takes the game down with it
+const FEATURES = ['ui', 'galop', 'care', 'safety', 'figures', 'pasture'];
+SU.ready = (async () => {
+  for (const name of FEATURES) {
+    try { const m = await import(`./js/features/${name}.js`); if (m.init) await m.init(SU); SU.features[name] ??= true; }
+    catch (e) { console.error(`[SU] feature "${name}" failed to load`, e); }
+  }
+  SU.emit('ready');
+})();
+
+// performance probe: __perf.run(300) steps and draws that many frames flat out and reports the cost of one
+window.__perf = {
+  run(n = 300, dt = 1 / 60) {
+    const gl = renderer.getContext(), ts = [];
+    let t = clock.elapsedTime + 500;
+    for (let i = 0; i < n; i++) { const t0 = performance.now(); t += dt; stepWorld(dt, t); renderer.render(scene, camera); gl.finish(); ts.push(performance.now() - t0); }
+    ts.sort((a, b) => a - b);
+    const r = renderer.info.render, m = renderer.info.memory;
+    return { meanMs: +(ts.reduce((a, b) => a + b, 0) / n).toFixed(2), p95Ms: +ts[Math.floor(n * 0.95)].toFixed(2), calls: r.calls, triangles: r.triangles, geometries: m.geometries, textures: m.textures, programs: renderer.info.programs.length };
+  },
+};
 
 // debug hooks
 let simT = 1000;
