@@ -639,9 +639,6 @@ const looseRails = [];
   // four fences down each long side; the turns at the ends are left clear
   const ponyTh = [-0.56, -0.19, 0.19, 0.56, Math.PI - 0.56, Math.PI - 0.19, Math.PI + 0.19, Math.PI + 0.56];
   ponyPlan.forEach(([type, h, spread], i) => addFence({ type, h, spread, course: 'pony', label: 'P' + (i + 1), ...onOval(PONY_ARENA, ponyTh[i]) }, i + 3));
-  // two small jumps down the middle of the indoor arena
-  addFence({ type: 'crossrail', h: 0.5, x: STABLE.x - 8, z: STABLE.z - 24, ang: Math.PI / 2, course: 'stable', label: 'I1' }, 1);
-  addFence({ type: 'vertical', h: 0.6, x: STABLE.x + 8, z: STABLE.z - 24, ang: Math.PI / 2, course: 'stable', label: 'I2' }, 4);
   // cross-country fences
   let xcN = 0;
   XC_PLAN.forEach((p, i) => { if (p.type !== 'bank') addFence({ ...p, xc: true, course: 'xc', label: 'XC' + (++xcN) }, i + 2); else xcN++; });
