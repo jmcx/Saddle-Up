@@ -109,6 +109,10 @@
   body.touch #toast { top: 190px; }
   kbd { display: inline-block; min-width: 18px; text-align: center; padding: 0 5px; border-radius: 4px; background: rgba(255,255,255,0.18); font-family: inherit; font-size: 12px; }
 </style>
+<script>
+// ?seed=N makes Math.random repeatable (same trees, rocks, grass and birds on every load), for before/after comparisons
+if (/[?&]seed=\d+/.test(location.search)) { let a = +location.search.match(/seed=(\d+)/)[1]; Math.random = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+</script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
@@ -170,7 +174,9 @@ function hash3(v) { const s = Math.sin(v.x * 127.1 + v.y * 311.7 + v.z * 74.7) *
 // phones and tablets get fewer grass blades, a smaller shadow map and a lower pixel ratio
 const MOBILE = matchMedia('(pointer: coarse)').matches;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, MOBILE ? 1.5 : 2));
+// quality knobs the adaptive governor (js/features/perf.js) turns; these defaults are full quality
+const gfx = { maxPixelRatio: Math.min(devicePixelRatio, MOBILE ? 1.5 : 2), animLOD: 1 };
+renderer.setPixelRatio(gfx.maxPixelRatio);
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -363,10 +369,18 @@ groundMat.onBeforeCompile = (sh) => {
     diffuseColor.rgb *= t1.rgb * 0.5 + t2.rgb * 0.3 + t3.rgb * 0.2;`);
 };
 const ground = (() => {
-  const g = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, GROUND_SEG, GROUND_SEG);
-  g.rotateX(-Math.PI / 2);
-  const pa = g.attributes.position;
-  for (let i = 0; i < pa.count; i++) pa.setY(i, baseH(pa.getX(i), pa.getZ(i)));
+  // perf: the same 2.5 m grid as before over the middle 840 m (every place you can ride is within ~210 m of the centre), then
+  // 10 m cells out to the edge, where the ground is 200 m+ away and mostly fog: 340k triangles instead of 819k, same look
+  const FINE = 420, STEP = GROUND_SIZE / GROUND_SEG, COARSE = 10, H = GROUND_SIZE / 2, c = [];
+  for (let x = -H; x < -FINE; x += COARSE) c.push(x);
+  for (let x = -FINE; x < FINE; x += STEP) c.push(x);
+  for (let x = FINE; x <= H; x += COARSE) c.push(x);
+  const n = c.length - 1, g = new THREE.PlaneGeometry(1, 1, n, n);
+  const pa = g.attributes.position, uv = g.attributes.uv;
+  for (let iy = 0, i = 0; iy <= n; iy++) for (let ix = 0; ix <= n; ix++, i++) {
+    const x = c[ix], z = c[iy];
+    pa.setXYZ(i, x, baseH(x, z), z); uv.setXY(i, (x + H) / GROUND_SIZE, 1 - (z + H) / GROUND_SIZE);
+  }
   g.computeVertexNormals();
   return new THREE.Mesh(g, groundMat);
 })();
@@ -415,6 +429,12 @@ const grass = (() => {
         vec2 rel = mod(aOffset - uCenter.xz + uR * 0.5, uR) - uR * 0.5;
         vec2 wp = uCenter.xz + rel;
         float fade = (1.0 - smoothstep(uR * 0.32, uR * 0.5, length(rel))) * pondFade(wp) * yardFade(wp);
+        // perf: most blades are faded out or off-screen; bail out before terrainH() and the wind maths (cut the frame's GPU time
+        // by more than half on a laptop GPU). The view test uses y = 0 for the blade's base: terrain stays within ±4.1 m, so an
+        // 8 m margin can't drop a visible blade; the camera never rolls, so view-space x doesn't depend on the height at all.
+        vec3 vb = (viewMatrix * vec4(wp.x, 0.0, wp.y, 1.0)).xyz;
+        float wz = -vb.z + 8.0;
+        if (fade <= 0.0 || wz < 0.0 || abs(vb.x) * projectionMatrix[0][0] > wz + 1.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
         float h = position.y;
         vec3 p = vec3(position.x * aScale.x, h * aScale.y * fade, 0.0);
         float c = cos(aRot), s = sin(aRot);
@@ -454,6 +474,54 @@ const nearFeature = (x, z, m) => nearCourse(x, z, m) || XC_PLAN.some(p => Math.h
   || Math.hypot(x - POND.x, z - POND.z) < POND.r + 6 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < MEADOW.r + 4 + m
   || Math.hypot(x - (STABLE.x + 3), z - (STABLE.z - 13)) < 46 + m
   || (Math.abs(x - TRAIL.x) < TRAIL.hx + 6 + m && Math.abs(z - TRAIL.z) < TRAIL.hz + 6 + m);
+// perf: an InstancedMesh is culled as one object, so the whole forest (420 trees, 360 rocks: ~600k triangles) used to be drawn
+// twice a frame, in the view and again in the sun's shadow pass. scatterLOD(src) splits a filled InstancedMesh into two that are
+// refilled as you move: 'near' holds the instances that can throw a shadow into the sun's shadow box (only these cast shadows, so the
+// shadow pass draws a handful), 'far' holds the rest that aren't behind the camera. Same look, about half the triangles in the view and
+// almost none in the shadow pass. (Trees past the fog's far end still show as a flat tree line on the horizon, so distance alone can't cull them.)
+const scatterSets = [];
+function scatterLOD(src) {
+  const N = src.count, geo = src.geometry; if (!geo.boundingSphere) geo.computeBoundingSphere();
+  const m = new THREE.Matrix4(), c = new V3(), sc = new V3(), q = new THREE.Quaternion(), pos = new Float32Array(N * 4);
+  for (let i = 0; i < N; i++) {
+    src.getMatrixAt(i, m); m.decompose(c, q, sc); c.copy(geo.boundingSphere.center).applyMatrix4(m);
+    pos.set([c.x, c.y, c.z, geo.boundingSphere.radius * Math.max(sc.x, sc.y, sc.z)], i * 4);
+  }
+  const mk = (cast) => { const im = new THREE.InstancedMesh(geo, src.material, N); im.castShadow = cast; im.receiveShadow = true; im.count = 0; if (src.instanceColor) im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3); scene.add(im); return im; };
+  scatterSets.push({ src, pos, near: mk(true), far: mk(false) });
+}
+const _sl = { x: 1e9, z: 0, fx: 0, fz: 0, sx: 0, sy: 0, sz: 0 };
+function updateScatterLOD(cam) {
+  const F = camFocus(), fx = -cam.matrixWorld.elements[8], fz = -cam.matrixWorld.elements[10], fl = Math.hypot(fx, fz) || 1;
+  const moved = Math.hypot(F.x - _sl.x, F.z - _sl.z) > 3 || Math.hypot(cam.position.x - _sl.cx, cam.position.z - _sl.cz) > 3;
+  const turned = (fx * _sl.fx + fz * _sl.fz) / fl < 0.985;                       // ~10 degrees
+  const sunMoved = Math.abs(sunDir.x - _sl.sx) + Math.abs(sunDir.y - _sl.sy) + Math.abs(sunDir.z - _sl.sz) > 0.01;
+  if (!moved && !turned && !sunMoved) return;
+  Object.assign(_sl, { x: F.x, z: F.z, cx: cam.position.x, cz: cam.position.z, fx: fx / fl, fz: fz / fl, sx: sunDir.x, sy: sunDir.y, sz: sunDir.z });
+  const S = sc.right * Math.SQRT2 + 4, ux = _sl.fx, uz = _sl.fz, ty = F.rootY;
+  for (const set of scatterSets) {
+    const { src, pos, near, far } = set, sm = src.instanceMatrix.array, sCol = src.instanceColor?.array;
+    let nn = 0, nf = 0;
+    for (let i = 0; i < src.count; i++) {
+      const x = pos[i * 4], y = pos[i * 4 + 1], z = pos[i * 4 + 2], r = pos[i * 4 + 3];
+      // inside the shadow camera's box? (it sits 40 m up the sun direction from you, 1..80 m deep, ±sc.right across), with a 4 m margin for movement
+      const dx = x - F.x, dy = y - ty, dz = z - F.z, t = dx * sunDir.x + dy * sunDir.y + dz * sunDir.z;
+      const lat = Math.hypot(dx - t * sunDir.x, dy - t * sunDir.y, dz - t * sunDir.z);
+      let dst = null;
+      if (t > 40 - sc.far - r - 4 && t < 40 - sc.near + r + 4 && lat < S + r) dst = near;
+      else {
+        const cx = x - cam.position.x, cz = z - cam.position.z, d = Math.hypot(cx, cz);
+        // not more than ~105 degrees off the view direction (re-done every 10 degrees of turn: nothing pops)
+        if (d < r + 12 || (cx * ux + cz * uz) > -0.25 * d) dst = far;
+      }
+      if (!dst) continue;
+      const k = dst === near ? nn++ : nf++;
+      dst.instanceMatrix.array.set(sm.subarray(i * 16, i * 16 + 16), k * 16);
+      if (sCol) dst.instanceColor.array.set(sCol.subarray(i * 3, i * 3 + 3), k * 3);
+    }
+    for (const [im, n] of [[near, nn], [far, nf]]) { im.count = n; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; im.boundingSphere = null; }
+  }
+}
 (() => {
   const rnd = (a, b) => a + Math.random() * (b - a);
   const trunkGeo = new THREE.CylinderGeometry(0.16, 0.3, 4, 8).translate(0, 2, 0);
@@ -478,7 +546,7 @@ const nearFeature = (x, z, m) => nearCourse(x, z, m) || XC_PLAN.some(p => Math.h
     m.compose(p, q, s); trunks.setMatrixAt(i, m); crowns.setMatrixAt(i, m);
     c.setHSL(rnd(0.2, 0.3), rnd(0.35, 0.55), rnd(0.18, 0.28)); crowns.setColorAt(i, c);
   }
-  for (const im of [trunks, crowns]) { im.castShadow = true; im.receiveShadow = true; scene.add(im); }
+  scatterLOD(trunks); scatterLOD(crowns);
 
   const rockGeo = new THREE.DodecahedronGeometry(1, 2);
   const pa = rockGeo.attributes.position;
@@ -494,8 +562,27 @@ const nearFeature = (x, z, m) => nearCourse(x, z, m) || XC_PLAN.some(p => Math.h
     m.compose(p, q, s); rocks.setMatrixAt(i, m);
     c.setHSL(0.08, 0.05, rnd(0.33, 0.5)); rocks.setColorAt(i, c);
   }
-  rocks.castShadow = true; rocks.receiveShadow = true; scene.add(rocks);
+  scatterLOD(rocks);
 })();
+
+// perf: merge a group's direct child meshes that share a material (and shadow flags) into one mesh each: one draw call instead of
+// many. keep: children that must stay separate (they move on their own). Only plain indexed meshes are merged.
+function mergeStaticChildren(g, keep = []) {
+  const skip = new Set(keep), groups = new Map();
+  for (const c of g.children) {
+    if (!c.isMesh || c.isInstancedMesh || skip.has(c) || Array.isArray(c.material) || !c.geometry.index || c.children.length) continue;
+    const key = c.material.id + (c.castShadow ? 'c' : '') + (c.receiveShadow ? 'r' : '');
+    if (!groups.has(key)) groups.set(key, []); groups.get(key).push(c);
+  }
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const geos = list.map(c => { c.updateMatrix(); const k = c.geometry.clone().applyMatrix4(c.matrix); for (const n of Object.keys(k.attributes)) if (!['position', 'normal', 'uv'].includes(n)) k.deleteAttribute(n); return k; });
+    const merged = mergeGeometries(geos); if (!merged) continue;
+    const m = new THREE.Mesh(merged, list[0].material); m.castShadow = list[0].castShadow; m.receiveShadow = list[0].receiveShadow;
+    for (const c of list) g.remove(c);
+    g.add(m);
+  }
+}
 
 // ---------------------------------------------------------------- jumping course
 const fences = [];
@@ -617,6 +704,9 @@ const looseRails = [];
     if (f.type === 'wall' || f.type === 'log' || f.type === 'hedge') {
       const post = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.3, 0.06), white)); post.position.set(-(RAIL_HALF + 0.45), 0.65, -f.D - 0.02); g.add(post);
     }
+    // perf: a fence was 14-21 meshes (posts, wings, cups, flag poles...), each a draw call in the view and again in the shadow pass;
+    // the parts that never move are merged per material. The rails stay separate meshes so they can still be knocked down.
+    mergeStaticChildren(g, f.rails.map(r => r.mesh));
     recomputeFence(f);
     fences.push(f);
   }
@@ -1403,6 +1493,7 @@ const seesaw = { group: null, onPrev: false, entry: 0, entryT: 0 };
   const M = (o) => new THREE.MeshStandardMaterial({ roughness: 0.85, ...o });
   const sand = M({ map: sandTex, roughness: 1 }), wood = M({ map: plankTex }), woodDark = M({ color: 0x5a3e28 }), white = M({ color: 0xf0ede6 });
   const shadow = (m) => { m.castShadow = true; m.receiveShadow = true; return m; };
+  const stat = new THREE.Group(); scene.add(stat);     // perf: the pieces that never move, merged per material at the end (~40 draw calls -> 5)
 
   // sand surface
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(TRAIL.hx * 2, TRAIL.hz * 2).rotateX(-Math.PI / 2), sand);
@@ -1427,7 +1518,7 @@ const seesaw = { group: null, onPrev: false, entry: 0, entryT: 0 };
   for (const [x0, z0, x1, z1] of fenceParts.rails) for (const h of [0.55, 1.05]) {
     const len = Math.hypot(x1 - x0, z1 - z0);
     const r = shadow(new THREE.Mesh(new THREE.BoxGeometry(x0 === x1 ? 0.06 : len, 0.1, x0 === x1 ? len : 0.06), white));
-    r.position.set((x0 + x1) / 2, Y + h, (z0 + z1) / 2); scene.add(r);
+    r.position.set((x0 + x1) / 2, Y + h, (z0 + z1) / 2); stat.add(r);
   }
   // sign over the gateway
   {
@@ -1437,27 +1528,29 @@ const seesaw = { group: null, onPrev: false, entry: 0, entryT: 0 };
     });
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 }));
     sign.position.set(X1 + 0.08, Y + 2.3, TRAIL.z); sign.rotation.y = Math.PI / 2; scene.add(sign);
-    for (const sz of [-1, 1]) { const p = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.6, 0.14), woodDark)); p.position.set(X1, Y + 1.3, TRAIL.z + sz * GATE); scene.add(p); }
-    const beam = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, GATE * 2 + 0.2), woodDark)); beam.position.set(X1, Y + 2.62, TRAIL.z); scene.add(beam);
+    for (const sz of [-1, 1]) { const p = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.6, 0.14), woodDark)); p.position.set(X1, Y + 1.3, TRAIL.z + sz * GATE); stat.add(p); }
+    const beam = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, GATE * 2 + 0.2), woodDark)); beam.position.set(X1, Y + 2.62, TRAIL.z); stat.add(beam);
   }
 
   // seesaw: a fulcrum log, and a plank that pivots on top of it
   {
     const { L, W, T, py } = SEESAW;
     const log = shadow(new THREE.Mesh(new THREE.CylinderGeometry(py / 2, py / 2, W + 0.3, 16).rotateX(Math.PI / 2), woodDark));
-    log.position.set(SEESAW.x, Y + py / 2, SEESAW.z); scene.add(log);
+    log.position.set(SEESAW.x, Y + py / 2, SEESAW.z); stat.add(log);
     for (const sz of [-1, 1]) {
       const chock = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.12), woodDark));
-      chock.position.set(SEESAW.x, Y + 0.09, SEESAW.z + sz * (W / 2 + 0.22)); scene.add(chock);
+      chock.position.set(SEESAW.x, Y + 0.09, SEESAW.z + sz * (W / 2 + 0.22)); stat.add(chock);
     }
     const g = new THREE.Group(); g.position.set(SEESAW.x, Y + py, SEESAW.z); scene.add(g);
     const plank = shadow(new THREE.Mesh(new THREE.BoxGeometry(L, T, W), wood)); plank.position.y = T / 2; g.add(plank);
     for (let u = -L / 2 + 0.25; u < L / 2; u += 0.45) {                       // grip battens across the plank
       const b = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.035, W - 0.06), woodDark)); b.position.set(u, T + 0.017, 0); g.add(b);
     }
+    const endMat = M({ color: 0xe6c83a });
     for (const su of [-1, 1]) {                                                // painted ends, so you can see where to step on
-      const e = new THREE.Mesh(new THREE.BoxGeometry(0.18, T + 0.004, W + 0.004), M({ color: 0xe6c83a })); e.position.set(su * (L / 2 - 0.09), T / 2, 0); g.add(e);
+      const e = new THREE.Mesh(new THREE.BoxGeometry(0.18, T + 0.004, W + 0.004), endMat); e.position.set(su * (L / 2 - 0.09), T / 2, 0); g.add(e);
     }
+    mergeStaticChildren(g);                                                    // the plank tips as one piece: battens and ends merge
     g.rotation.z = SEESAW.theta;
     seesaw.group = g;
   }
@@ -1468,18 +1561,19 @@ const seesaw = { group: null, onPrev: false, entry: 0, entryT: 0 };
     const poleMat = M({ map: stripes, roughness: 0.5 }), baseMat = M({ color: 0x1c1c1c, roughness: 0.9 });
     for (let i = 0; i < SLALOM.n; i++) {
       const x = SLALOM.x0 + i * SLALOM.gap, z = SLALOM.z;
-      const base = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.07, 18), baseMat)); base.position.set(x, Y + 0.035, z); scene.add(base);
+      const base = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.07, 18), baseMat)); base.position.set(x, Y + 0.035, z); stat.add(base);
       const g = new THREE.Group(); g.position.set(x, Y + 0.06, z); g.rotation.order = 'YXZ'; scene.add(g);
       const pole = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 1.7, 10).translate(0, 0.85, 0), poleMat)); g.add(pole);
-      const knob = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), poleMat)); knob.position.y = 1.72; g.add(knob);
+      const knob = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), poleMat)); knob.position.y = 1.72; g.add(knob); mergeStaticChildren(g);
       SLALOM.poles.push({ i, x, z, group: g, down: false, fall: 0, downT: 0 });
     }
     // cones marking where the slalom starts and ends
     const cone = new THREE.ConeGeometry(0.16, 0.42, 12).translate(0, 0.21, 0), coneMat = M({ color: 0xff7a1a, roughness: 0.6 });
     for (const x of [SLALOM.x0 - 3.5, SLALOM.x0 + (SLALOM.n - 1) * SLALOM.gap + 3.5]) for (const dz of [-2.5, 2.5]) {
-      const c = shadow(new THREE.Mesh(cone, coneMat)); c.position.set(x, Y, SLALOM.z + dz); scene.add(c);
+      const c = shadow(new THREE.Mesh(cone, coneMat)); c.position.set(x, Y, SLALOM.z + dz); stat.add(c);
     }
   }
+  mergeStaticChildren(stat);
 })();
 
 function updateTrail(dt, time) {
@@ -1606,8 +1700,10 @@ function knockRail(f, rail, dir, speed) {
   f.downT = 0;
 }
 
+const _railE = new THREE.Euler(0, 0, 0, 'YZX');
 function updateRails(dt) {
-  const q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YZX');
+  if (!looseRails.length) return;
+  const e = _railE;
   for (const r of looseRails) {
     const b = r.body; if (!b || b.rest) continue;
     const m = r.mesh;
@@ -3266,15 +3362,16 @@ function footfall(R, s, L, i, ctl, refV, wg) {
 
 // ---------------------------------------------------------------- camera
 const camState = { yaw: 0, pos: new V3(0, 2.5, -7), look: new V3() };
+const _ct = new V3(), _cw = new V3(), _cf = new V3();       // reused every frame
 function updateCamera(dt, time) {
   const F = camFocus();
   if (!dragging && time - lastDrag > 2.5 && Math.abs(F.speed) > 0.3) camYawOff = damp(camYawOff, 0, 0.8, dt);
   let d = F.yaw + camYawOff - camState.yaw;
   d = Math.atan2(Math.sin(d), Math.cos(d));
   camState.yaw += d * (1 - Math.exp(-(dragging ? 20 : 3) * dt));
-  const tgt = new V3(F.x, F.base + F.h, F.z);
+  const tgt = _ct.set(F.x, F.base + F.h, F.z);
   const dist = camDist * (1 + clamp(Math.abs(F.speed) / 9.5, 0, 1) * 0.15) * F.scale;
-  const want = new V3(
+  const want = _cw.set(
     tgt.x - Math.sin(camState.yaw) * Math.cos(camPitch) * dist,
     tgt.y + Math.sin(camPitch) * dist,
     tgt.z - Math.cos(camState.yaw) * Math.cos(camPitch) * dist);
@@ -3294,7 +3391,7 @@ function updateCamera(dt, time) {
   // shadow + grass follow
   sun.position.set(F.x, F.rootY, F.z).addScaledVector(sunDir, 40);
   sun.target.position.set(F.x, F.rootY, F.z);
-  const fwd = new V3().subVectors(camState.look, camState.pos).setY(0).normalize();
+  const fwd = _cf.subVectors(camState.look, camState.pos).setY(0).normalize();
   grass.material.uniforms.uCenter.value.set(F.x + fwd.x * 14, 0, F.z + fwd.z * 14);
   grass.material.uniforms.uHorse.value.set(st.x, 0, st.z);
   grass.material.uniforms.uTime.value = time;
@@ -3305,6 +3402,9 @@ function updateCamera(dt, time) {
 const strideEl = document.getElementById('stride'), strideZone = strideEl.querySelector('.zone'), strideMark = strideEl.querySelector('.mark'), strideLbl = strideEl.querySelector('.lbl');
 const STRIDE_RANGE = 18;
 const winCache = new Map();
+// perf: the meter is refreshed every frame while it shows; only touch the DOM when a value actually changes
+const setStyle = (el, k, v) => { if (el.style[k] !== v) el.style[k] = v; };
+const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
 // distances (horse centre to fence centre line, metres) where pressing jump clears this fence cleanly
 function jumpWindow(f, v) {
   const B = H.B, key = `${fences.indexOf(f)}|${Math.round(v * 4)}|${breedIdx}|${f.h.toFixed(2)}`;
@@ -3350,13 +3450,13 @@ function updateStride() {
       show = true;
       const w = jumpWindow(best, st.speed);
       const pct = (d) => (1 - clamp(d, 0, STRIDE_RANGE) / STRIDE_RANGE) * 100;
-      if (w) { strideZone.style.left = pct(w[1]) + '%'; strideZone.style.width = (pct(w[0]) - pct(w[1])) + '%'; strideZone.hidden = false; }
+      if (w) { setStyle(strideZone, 'left', pct(w[1]).toFixed(1) + '%'); setStyle(strideZone, 'width', (pct(w[0]) - pct(w[1])).toFixed(1) + '%'); strideZone.hidden = false; }
       else strideZone.hidden = true;
-      strideMark.style.left = pct(bestD) + '%';
+      setStyle(strideMark, 'left', pct(bestD).toFixed(1) + '%');
       const go = !!w && bestD >= w[0] && bestD <= w[1] && !st.jump;
       strideEl.classList.toggle('go', go);
       strideEl.classList.toggle('jumping', !!st.jump);
-      strideLbl.textContent = st.jump ? `Fence ${best.num}` : go ? 'Jump now!' : !w ? `Fence ${best.num}: too big at this pace` : bestD > w[1] ? `Fence ${best.num} · ${(bestD - w[1]).toFixed(1)} m to take-off` : `Fence ${best.num} · too close`;
+      setText(strideLbl, st.jump ? `Fence ${best.num}` : go ? 'Jump now!' : !w ? `Fence ${best.num}: too big at this pace` : bestD > w[1] ? `Fence ${best.num} · ${(bestD - w[1]).toFixed(1)} m to take-off` : `Fence ${best.num} · too close`);
     }
   }
   strideEl.classList.toggle('show', show);
@@ -3505,11 +3605,13 @@ const birds = (() => {
     }
     return new V3(60, 0, -20);
   };
+  // perf: ~70 birds of 3 meshes each were ~200 draw calls. The groups below only hold the transforms (they're not in the scene);
+  // sync() copies them into three InstancedMeshes (bodies, left wings, right wings): 3 draw calls for all the birds.
+  const all = [];
   const mk = () => {
     const g = new THREE.Group();
-    const b = new THREE.Mesh(bodyGeo, mat); b.castShadow = true; g.add(b);
-    const wl = new THREE.Mesh(wingGeo, mat), wr = new THREE.Mesh(wingGeo, mat); wr.scale.x = -1; g.add(wl, wr);
-    scene.add(g); return { g, wl, wr };
+    const wl = new THREE.Object3D(), wr = new THREE.Object3D(); wr.scale.x = -1; g.add(wl, wr);
+    const b = { g, wl, wr }; all.push(b); return b;
   };
   for (let f = 0; f < 7; f++) {
     const home = groundSpot(), list = [];
@@ -3521,7 +3623,15 @@ const birds = (() => {
     flocks.push({ birds: list, state: 'ground', home, target: null, t: 0 });
   }
   // a few birds soaring high over the fields
-  const soar = [0, 1, 2].map(i => ({ ...mk(), a: i * 2.1, r: 30 + i * 12, h: 22 + i * 5, c: new V3(20 - i * 30, 0, 40 + i * 20) }));
+  const soar = [0, 1, 2].map(i => Object.assign(mk(), { a: i * 2.1, r: 30 + i * 12, h: 22 + i * 5, c: new V3(20 - i * 30, 0, 40 + i * 20) }));
+  const inst = [bodyGeo, wingGeo, wingGeo].map((geo, k) => { const im = new THREE.InstancedMesh(geo, mat, all.length); im.castShadow = k === 0; im.frustumCulled = false; scene.add(im); return im; });
+  const sync = () => {
+    all.forEach((b, i) => {
+      b.g.updateMatrixWorld(true);
+      inst[0].setMatrixAt(i, b.g.matrixWorld); inst[1].setMatrixAt(i, b.wl.matrixWorld); inst[2].setMatrixAt(i, b.wr.matrixWorld);
+    });
+    for (const im of inst) im.instanceMatrix.needsUpdate = true;
+  };
   let chirpT = 2;
   return {
     flocks,
@@ -3575,6 +3685,7 @@ const birds = (() => {
         const F = flocks[Math.floor(Math.random() * flocks.length)], c = F.birds[0].p, d = camera.position.distanceTo(c);
         if (F.state === 'ground' && d < 70) chirp((1 - d / 70) * envCur.birds, panOf(c));
       }
+      sync();
     },
   };
 })();
@@ -3655,9 +3766,19 @@ function updateStableHorses(dt, time) {
     autoEat(h);
     const d = camera.position.distanceTo(h.R.root.position);
     if (d > 90) continue;
-    updateRig(h.R, h.s, { target: 0, turnIn: 0, player: false, vol: clamp(1 - d / 14, 0, 1) * 0.7 }, dt, time);
+    // perf: animation LOD. Full rate within 25 m, every 2nd frame to 50 m, every 4th beyond, every 8th when off-screen (the time
+    // in between is passed on as dt, so nothing drifts); gfx.animLOD < 1 (the quality governor) pulls these distances in
+    h.animAcc = (h.animAcc ?? 0) + dt; h.animN = (h.animN ?? 0) + 1;
+    _hs.center.copy(h.R.root.position); _hs.center.y += 1; _hs.radius = 2.5 * h.B.S;
+    const L = gfx.animLOD, every = !_frus.intersectsSphere(_hs) ? 8 : d < 25 * L ? 1 : d < 50 * L ? 2 : 4;
+    if (h.animN < every && Math.abs(h.s.speed) < 0.2) continue;
+    updateRig(h.R, h.s, { target: 0, turnIn: 0, player: false, vol: clamp(1 - d / 14, 0, 1) * 0.7 }, Math.min(h.animAcc, 0.15), time);
+    h.animAcc = 0; h.animN = 0;
   }
 }
+const _hs = new THREE.Sphere(), _frus = new THREE.Frustum(), _pv = new THREE.Matrix4();
+// the camera's view frustum as of the last frame, for cheap visibility tests in the simulation
+function updateViewFrustum() { camera.updateMatrixWorld(); _frus.setFromProjectionMatrix(_pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); }
 
 // ---------------------------------------------------------------- you: riding, leading, or on foot
 // On foot you move only while a key is held: ↑ walks forward (tap it twice to run), ↓ steps back,
@@ -3853,14 +3974,17 @@ function syncFootGait() {
   if (want !== gait) setGait(want);
 }
 // what the camera follows: you on foot, otherwise your horse
+// perf: called several times a frame, so it fills one shared object instead of allocating (read it straight away, don't keep it)
+const _focus = { x: 0, z: 0, yaw: 0, speed: 0, base: 0, rootY: 0, h: 0, scale: 1 };
 function camFocus() {
-  const P = player;
+  const P = player, f = _focus;
   if (P && (P.mode === 'free' || P.mode === 'toTake')) {
-    const g = groundH(P.x, P.z);
-    return { x: P.x, z: P.z, yaw: P.yaw, speed: P.speed, base: g, rootY: g, h: 1.25 * P.size, scale: 0.62 };
+    f.x = P.x; f.z = P.z; f.yaw = P.yaw; f.speed = P.speed; f.base = f.rootY = groundH(P.x, P.z); f.h = 1.25 * P.size; f.scale = 0.62;
+    return f;
   }
-  return { x: st.x, z: st.z, yaw: st.yaw, speed: st.speed, base: lerp(groundH(st.x, st.z), st.rootY, 0.6), rootY: st.rootY,
-    h: (1.25 - 0.3 * st.graze) * H.B.S * (0.6 + 0.4 * H.B.k), scale: 0.45 + 0.55 * H.B.S };
+  f.x = st.x; f.z = st.z; f.yaw = st.yaw; f.speed = st.speed; f.base = lerp(groundH(st.x, st.z), st.rootY, 0.6); f.rootY = st.rootY;
+  f.h = (1.25 - 0.3 * st.graze) * H.B.S * (0.6 + 0.4 * H.B.k); f.scale = 0.45 + 0.55 * H.B.S;
+  return f;
 }
 
 // your horse eats when you bring it to hay: walking up to a pile stops it, and it puts its head down
@@ -3881,9 +4005,8 @@ function updatePlayerEating() {
 
 // roofs fade away while you ride inside, so you can see in
 function updateBuildings(dt) {
-  const inR = (b, x, z) => x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ;
+  const inR = (b, x, z) => x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ, F = camFocus();
   for (const r of roofs) {
-    const F = camFocus();
     const target = inR(r.region, F.x, F.z) || inR(r.region, camera.position.x, camera.position.z) ? 0 : 1;
     const m = r.mesh.material; m.opacity = damp(m.opacity, target, 6, dt);
     r.mesh.visible = m.opacity > 0.02; m.depthWrite = m.opacity > 0.95; r.mesh.castShadow = m.opacity > 0.5;
@@ -3946,6 +4069,7 @@ function stepWorld(dt, time) {
   updateRig(H, st, playerControl(), dt, time);
   updatePerson(dt, time);
   syncFootGait();
+  updateViewFrustum();
   updateStableHorses(dt, time);
   updateWorld(dt, time);
   updateRails(dt);
@@ -3968,11 +4092,16 @@ function runUpdaters(dt, time) {
     try { u.fn(d, time); } catch (e) { console.error('[SU] update', e); u.fn = () => {}; }
   }
 }
+let hudKmh = '';
+// work that must match whatever camera is about to draw the world (also runs for __perf, __horse.step and feature renders)
+scene.onBeforeRender = (r, s, cam) => { updateScatterLOD(cam); };
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const time = clock.elapsedTime;
   if (!SU.pauseCount) stepWorld(dt, time);
-  hudS.innerHTML = `${(Math.abs(camFocus().speed) * 3.6).toFixed(0)}<small>km/h</small>`;
+  // perf: only touch the DOM when the number changes (rewriting innerHTML every frame forces a style/layout pass)
+  const kmh = (Math.abs(camFocus().speed) * 3.6).toFixed(0);
+  if (kmh !== hudKmh) { hudKmh = kmh; hudS.innerHTML = `${kmh}<small>km/h</small>`; }
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -3988,12 +4117,13 @@ addEventListener('resize', () => {
 const _pp = new V3();
 Object.assign(SU, {
   THREE, mergeGeometries, scene, camera, renderer, clock, MOBILE,
+  gfx: Object.assign(gfx, { grass, sun, GRASS_N, herd }),     // for js/features/perf.js (quality governor, rig batching)
   util: { clamp, lerp, damp, smooth, TAU },
   world: { groundH, colliders, walls, fences, haySpots, roofs, interiors, stallBoxes, places: PLACES, STABLE, TRAIL, COURSE, PONY_ARENA, MEADOW },
   horses, BREEDS, PERSONS, buildHorse, buildPerson, newRigState, updateRig, horseOf,
   // where you are standing (on foot) or sitting (riding), in world coordinates
   personPos(out = {}) { const P = player; if (P.mode === 'free' || P.mode === 'toTake') { out.x = P.x; out.z = P.z; } else { P.group.getWorldPosition(_pp); out.x = _pp.x; out.z = _pp.z; } return out; },
-  camFocus,
+  camFocus: () => ({ ...camFocus() }),
   actions: { actionE, letGo, takeLead, switchToHorse, setGait, setCourse, resetCourse, brakeHorse, sendHome, setPerson, placeFree, nearbyHorse, collidePerson, seatPerson, standAtLead, onModeChanged },
   audio: { initAudio, audioOk, env, noiseHit, hoofSound, neigh, bray, snort, munch, get ctx() { return actx; }, get out() { return master; }, get muted() { return muted; } },
   toast,
@@ -4005,7 +4135,7 @@ Object.defineProperties(SU, {
   course: { get: () => COURSES[courseIdx].key },
 });
 // each feature is a module exporting init(SU); a feature that fails to load never takes the game down with it
-const FEATURES = ['ui', 'galop', 'care', 'safety', 'figures', 'pasture'];
+const FEATURES = ['ui', 'galop', 'care', 'safety', 'figures', 'pasture', 'perf'];
 SU.ready = (async () => {
   for (const name of FEATURES) {
     try { const m = await import(`./js/features/${name}.js`); if (m.init) await m.init(SU); SU.features[name] ??= true; }
@@ -4014,15 +4144,62 @@ SU.ready = (async () => {
   SU.emit('ready');
 })();
 
-// performance probe: __perf.run(300) steps and draws that many frames flat out and reports the cost of one
+// performance probe: __perf.run(300) steps and draws that many frames flat out and reports the cost of one.
+// stepMs / renderMs split the frame; mainCalls / shadowCalls split the draw calls between the main pass and the sun's shadow pass;
+// gpuMs is true GPU time when EXT_disjoint_timer_query_webgl2 exists. __perf.census() lists what the draw calls and triangles are.
 window.__perf = {
   run(n = 300, dt = 1 / 60) {
-    const gl = renderer.getContext(), ts = [];
+    const gl = renderer.getContext(), ts = [], tS = [], tR = [], gq = gl.getExtension('EXT_disjoint_timer_query_webgl2'), gpu = [];
     let t = clock.elapsedTime + 500;
-    for (let i = 0; i < n; i++) { const t0 = performance.now(); t += dt; stepWorld(dt, t); renderer.render(scene, camera); gl.finish(); ts.push(performance.now() - t0); }
+    renderer.info.autoReset = false;               // three.js resets info after the shadow pass: reset by hand so both passes count
+    for (let i = 0; i < n; i++) {
+      const t0 = performance.now(); t += dt; stepWorld(dt, t); const t1 = performance.now();
+      let q = null; if (gq && i % 10 === 0) { q = gl.createQuery(); gl.beginQuery(gq.TIME_ELAPSED_EXT, q); }
+      renderer.info.reset(); renderer.render(scene, camera);
+      if (q) { gl.endQuery(gq.TIME_ELAPSED_EXT); gpu.push(q); }
+      gl.finish(); const t2 = performance.now(); ts.push(t2 - t0); tS.push(t1 - t0); tR.push(t2 - t1);
+    }
+    const med = (a) => +a.sort((x, y) => x - y)[a.length >> 1].toFixed(2);
+    // GPU timer results arrive a frame or two later: __perf.gpu() collects them
+    this._q = gpu;
+    const r = renderer.info.render, m = renderer.info.memory, calls = r.calls, triangles = r.triangles;
+    // one more frame with the shadow map frozen gives the main pass alone
+    const au = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false; renderer.info.reset(); renderer.render(scene, camera); renderer.shadowMap.autoUpdate = au;
+    renderer.info.autoReset = true;
+    const mainCalls = renderer.info.render.calls, mainTris = renderer.info.render.triangles;
     ts.sort((a, b) => a - b);
-    const r = renderer.info.render, m = renderer.info.memory;
-    return { meanMs: +(ts.reduce((a, b) => a + b, 0) / n).toFixed(2), p95Ms: +ts[Math.floor(n * 0.95)].toFixed(2), calls: r.calls, triangles: r.triangles, geometries: m.geometries, textures: m.textures, programs: renderer.info.programs.length };
+    return { meanMs: +(ts.reduce((a, b) => a + b, 0) / n).toFixed(2), medMs: med(ts), p95Ms: +ts[Math.floor(n * 0.95)].toFixed(2), stepMs: med(tS), renderMs: med(tR),
+      calls, triangles, mainCalls, shadowCalls: calls - mainCalls, mainTris, shadowTris: triangles - mainTris,
+      geometries: m.geometries, textures: m.textures, programs: renderer.info.programs.length, pixelRatio: renderer.getPixelRatio(), size: `${innerWidth}x${innerHeight}` };
+  },
+  // median GPU ms per frame of the last run() (null without the timer extension); await it a moment after run()
+  async gpu() {
+    const gl = renderer.getContext(), gq = gl.getExtension('EXT_disjoint_timer_query_webgl2'), qs = this._q ?? [];
+    if (!gq || !qs.length) return null;
+    for (let k = 0; k < 40 && !gl.getQueryParameter(qs[qs.length - 1], gl.QUERY_RESULT_AVAILABLE); k++) await new Promise(r => setTimeout(r, 25));
+    const v = qs.map(q => { const ok = gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE) && !gl.getParameter(gq.GPU_DISJOINT_EXT); const x = ok ? gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6 : null; gl.deleteQuery(q); return x; }).filter(x => x != null).sort((a, b) => a - b);
+    this._q = null; return v.length ? +v[v.length >> 1].toFixed(2) : null;
+  },
+  // what is drawn from this camera: visible meshes in the view frustum, grouped by the nearest named ancestor (or top-level
+  // object), sorted by draw calls. castCalls counts shadow casters of that group regardless of the view.
+  // census(25, true) does the same for the sun's shadow pass (casters inside the shadow camera's box).
+  census(top = 25, shadow = false) {
+    const fr = new THREE.Frustum(), pm = new THREE.Matrix4(), sph = new THREE.Sphere(), out = {}, cam = shadow ? sun.shadow.camera : camera;
+    cam.updateMatrixWorld(); scene.updateMatrixWorld();
+    fr.setFromProjectionMatrix(pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    const visible = (o) => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; };
+    scene.traverse((o) => {
+      if (!(o.isMesh || o.isPoints || o.isLine) || !visible(o) || !o.layers.test(camera.layers) || (shadow && !o.castShadow)) return;
+      const g = o.geometry; let inView = true;
+      if (o.frustumCulled) { if (o.isInstancedMesh) { if (!o.boundingSphere) o.computeBoundingSphere(); sph.copy(o.boundingSphere); } else { if (!g.boundingSphere) g.computeBoundingSphere(); sph.copy(g.boundingSphere); } sph.applyMatrix4(o.matrixWorld); inView = fr.intersectsSphere(sph); }
+      let key = null; for (let p = o; p && p !== scene && !key; p = p.parent) if (p.name) key = p.name;
+      if (!key) { let p = o; while (p.parent && p.parent !== scene) p = p.parent; key = `#${scene.children.indexOf(p)}:${p.type}`; }
+      const mats = Array.isArray(o.material) ? o.material.length : 1;
+      const tris = ((g.index ? g.index.count : g.attributes.position?.count ?? 0) / 3) * (o.isInstancedMesh ? o.count : g.isInstancedBufferGeometry ? g.instanceCount : 1);
+      const e = out[key] ??= { key, objs: 0, calls: 0, tris: 0, castCalls: 0 };
+      e.objs++; if (inView) { e.calls += mats; e.tris += tris; } if (o.castShadow) e.castCalls += mats;
+    });
+    return Object.values(out).sort((a, b) => b.calls - a.calls).slice(0, top).map(e => ({ ...e, tris: Math.round(e.tris) }));
   },
 };
 
