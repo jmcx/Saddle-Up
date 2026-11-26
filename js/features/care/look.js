@@ -93,23 +93,31 @@ export function makeLook(SU) {
   }
 
   // ---- water level in each box's bucket: one instanced disc per bucket (a single draw call)
+  // The yard merges its static meshes, so the buckets are found from the layout: each box's bucket stands in the corner by
+  // the box front, 0.3 m from the partition (stable yard section: boxes run from the sellerie wall to the écurie's east end,
+  // three a side). A box may also give its own { bucket: {x, z} }.
   const buckets = [];
   {
-    const found = [];
-    SU.scene.traverse(o => { const q = o.isMesh && o.geometry.type === 'CylinderGeometry' && o.geometry.parameters; if (q && q.radiusTop === 0.17 && q.height === 0.32) found.push(o); });
+    const PL = SU.world.places, barn = PL.barn, aisle = PL.aisle, tr = PL.tackRoom, y0 = PL.y ?? 0;
     for (const box of SU.world.stallBoxes) {
-      let best = null, bd = 1e9;
-      for (const o of found) { o.getWorldPosition(v); const dd = Math.hypot(v.x - box.x, v.z - box.z); if (dd < bd) { bd = dd; best = v.clone(); } }
-      buckets.push(best && bd < 4 ? { x: best.x, y: best.y - 0.16, z: best.z } : null);
+      if (box.bucket) { buckets.push({ x: box.bucket.x, y: (box.bucket.y ?? y0) + 0.04, z: box.bucket.z }); continue; }
+      if (!barn || !aisle || !tr) { buckets.push(null); continue; }
+      const roomX = tr.maxX, bw = (barn.maxX - roomX) / 3, i = Math.max(0, Math.min(2, Math.floor((box.x - roomX) / bw)));
+      const zc = (aisle.minZ + aisle.maxZ) / 2, side = box.z > zc ? 1 : -1, zFront = side > 0 ? aisle.maxZ : aisle.minZ;
+      buckets.push({ x: roomX + (i + 1) * bw - 0.3, y: y0 + 0.04, z: zFront + side * 0.3 });
     }
   }
-  const water = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.155, 0.155, 0.01, 14), new THREE.MeshStandardMaterial({ color: 0x4f8596, roughness: 0.08, metalness: 0.2 }), Math.max(1, buckets.length));
+  const water = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.15, 0.004, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.15, metalness: 0.1 }), Math.max(1, buckets.length));
   water.frustumCulled = false; water.visible = false; SU.scene.add(water);
   const m4 = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3(0, 0, 0), q0 = new THREE.Quaternion();
+  const wc = new THREE.Color(), emptyC = new THREE.Color(0x1f2522), fullC = new THREE.Color(0x4f8fa6);
   function setWater(i, level) {
     const b = buckets[i]; if (!b) return;
-    v.set(b.x, b.y + 0.05 + 0.26 * level, b.z);
-    m4.compose(v, q0, level > 0.03 ? one : zero); water.setMatrixAt(i, m4); water.instanceMatrix.needsUpdate = true;
+    // the bucket mesh is a closed cylinder, so the water shows as its top: blue when full, the dark empty inside when not
+    v.set(b.x, b.y + 0.325, b.z);
+    m4.compose(v, q0, one); water.setMatrixAt(i, m4); water.instanceMatrix.needsUpdate = true;
+    const k = Math.min(1, Math.max(0, (level - 0.05) / 0.5));
+    water.setColorAt(i, wc.copy(emptyC).lerp(fullC, k)); water.instanceColor.needsUpdate = true;
   }
 
   // ---- hearts: a little burst over a happy horse's head (one Points object, reused)

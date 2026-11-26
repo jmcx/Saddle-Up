@@ -53,8 +53,10 @@ export function init(SU) {
   const boxIdx = (h) => (h.box ? W.stallBoxes.indexOf(h.box) : -1);
   const inside = (b, x, z, m = 0) => !!b && x > b.minX - m && x < b.maxX + m && z > b.minZ - m && z < b.maxZ + m;
   // you may groom / tack up a horse you hold, or one standing in its box
-  const steady = (h) => held(h) || atBox(h);
-  const notSteady = (h) => `Prends ${h.name} en main (E) ou laisse-le dans son box pour t'en occuper.`;
+  // ...or one tied up at the grooming bay (standing at one of its spots)
+  const atBay = (h) => !!places.groomingBay?.spots?.some(p => Math.hypot(h.s.x - p.x, h.s.z - p.z) < 1.6);
+  const steady = (h) => held(h) || atBox(h) || atBay(h);
+  const notSteady = (h) => `Tiens ${h.name} en main (E), ou laisse-le dans son box ou à l'aire de pansage.`;
 
   // ---- per-horse drink / ration spots for the head-down eating pose (s.eatHay: the rig eats from any { x, z, low, amount })
   const bucketSpot = W.stallBoxes.map((b, i) => fx.buckets[i] ? { x: fx.buckets[i].x, z: fx.buckets[i].z, reach: 1.2, low: false, amount: 0, drink: true } : null);
@@ -143,7 +145,6 @@ export function init(SU) {
     items.push({ icon: '🪮', label: 'Panser', sub: 'Étrille, bouchon, brosse douce, cure-pieds', action: () => groom(h) });
     items.push({ icon: '🥕', label: 'Nourrir', sub: 'Foin, granulés ou friandise', action: () => feedMenu(h) });
     if (boxIdx(h) >= 0) items.push({ icon: '💧', label: 'Remplir le seau d’eau', sub: nearBox(h) ? 'Un cheval doit toujours avoir de l’eau propre.' : 'Le seau est dans son box.', disabled: !nearBox(h), action: () => fillWater(h) });
-    if (lead && troughSpot && Math.hypot(h.s.x - troughSpot.x, h.s.z - troughSpot.z) < 4) items.push({ icon: '🚰', label: 'Le faire boire à l’abreuvoir', action: () => drinkTrough(h) });
     items.push(S.saddled
       ? { icon: '🪑', label: 'Desseller', sub: 'Dessangler, puis retirer la selle et le tapis', action: () => unsaddle(h) }
       : { icon: '🪑', label: 'Seller', sub: 'Le tapis, la selle, puis la sangle', action: () => saddle(h) });
@@ -160,7 +161,7 @@ export function init(SU) {
     return openGroom(SU, h, S, fx, ({ frac, feet, complete, worked }) => {
       S.dirt *= 1 - frac; if (feet) { S.feetClean = true; S.walked = 0; }
       if (complete) { S.dirt = 0; S.shine = 600; deed(h, 'groom', `${h.name} est tout propre. Bravo !`, true); }
-      else if (worked) { if (frac > 0.3) S.shine = 120; SU.emit('care', 'groom', h); SU.toast(frac > 0.9 ? `${h.name} est presque tout propre !` : `Pansage pas fini : il reste un peu de travail.`, 'info'); }
+      else if (worked) { if (frac > 0.3) S.shine = 120; SU.emit('care', 'groom', h); SU.toast(frac > 0.9 ? `${h.name} est presque tout propre !` : `Le pansage n’est pas fini, mais c’est déjà bien !`, 'info'); }
       fx.applyDirt(h, S, cam);
     });
   }
@@ -190,7 +191,7 @@ export function init(SU) {
       return true;
     }
     if (kind === 'granules') {
-      if (places.feedRoom && !S.carryPellets) { SU.toast('Les granulés sont à la réserve : va préparer sa ration.', 'warn'); return false; }
+      if (places.feedRoom && !S.carryPellets) { SU.toast('Les granulés sont dans la réserve à grain, dans le hangar : va préparer sa ration.', 'warn'); return false; }
       if (gameT - S.pelletsAt < 600) { SU.toast('Trop de granulés, ça peut le rendre malade ! Une ration suffit.', 'bad'); SU.ui.say?.('Trop de granulés, ça peut le rendre malade.'); return false; }
       S.pelletsAt = gameT; S.carryPellets = false; S.hunger = Math.max(0, S.hunger - 0.35);
       const sp = { x: h.s.x + Math.sin(h.s.yaw) * 1.1 * h.B.S, z: h.s.z + Math.cos(h.s.yaw) * 1.1 * h.B.S, reach: 1, low: true, ration: true, amount: 0 };
@@ -228,6 +229,12 @@ export function init(SU) {
     deed(h, 'water', `${h.name} boit à l’abreuvoir. L’eau propre, c’est très important.`);
     return true;
   }
+
+  if (troughSpot) SU.interact.add({
+    id: 'care-trough', icon: '🚰', radius: 3, pos: troughSpot, modes: ['lead'],
+    label: () => `Faire boire ${SU.horse.name}`, when: () => !!SU.horse && Math.hypot(SU.st.x - troughSpot.x, SU.st.z - troughSpot.z) < 3.2,
+    action: () => drinkTrough(SU.horse),
+  });
 
   // ---- saddling and bridling: short ordered activities; the 3D tack follows each step
   function saddle(h) {
