@@ -37,7 +37,7 @@
   #score .good { color: #a9e08f; } #score .bad { color: #ffab9a; }
   #toast {
     position: fixed; top: 92px; left: 50%; transform: translateX(-50%) translateY(-8px); pointer-events: none;
-    font-size: 22px; font-weight: 700; letter-spacing: .01em; padding: 9px 20px; border-radius: 12px; white-space: nowrap;
+    font-size: 22px; font-weight: 700; letter-spacing: .01em; padding: 9px 20px; border-radius: 12px; width: max-content; max-width: calc(100vw - 32px); box-sizing: border-box; text-align: center; text-wrap: balance;
     color: #fff; background: rgba(20,22,18,0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     opacity: 0; transition: opacity .25s, transform .25s;
   }
@@ -2805,7 +2805,7 @@ const toastEl = document.getElementById('toast'), scoreEl = document.getElementB
 let toastTimer = 0;
 function toast(msg, kind) {
   toastEl.textContent = msg; toastEl.className = 'show ' + kind;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastEl.className = kind; }, 1800);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastEl.className = kind; }, clamp(1200 + msg.length * 55, 1800, 6500));   // longer messages stay up longer
 }
 function updateScore() { scoreEl.innerHTML = `<span class="good">✓ ${score.clears} clear</span> &nbsp; <span class="bad">✗ ${score.faults} fault${score.faults === 1 ? '' : 's'}</span>`; }
 
