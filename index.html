@@ -241,7 +241,9 @@ const BANK = { x: 58, z: 50, ang: 0.6, hx: 4.5, hz: 3.5, h: 0.7 };
 const POND = { x: 74.6, z: 77.5, r: 8.5, depth: 0.5, level: 0 };
 const MEADOW = { x: -105, z: 55, r: 24 };                    // where the loose horses graze
 // stable yard: barn (with boxes, tack room and office) and an indoor arena. Local coordinates are metres from this point.
-const STABLE = { x: -120, z: -40, y: 0, rect: [-26, 32, -38, 12] };   // rect: minX, maxX, minZ, maxZ of the hard-standing (local)
+const STABLE = { x: -120, z: -40, y: 0, rect: [-29, 35, -39, 14] };   // rect: minX, maxX, minZ, maxZ of the hard-standing (local)
+// the track from the yard to the pré gate (local x0, z0, x1, z1): it runs north from the passage beside the écurie and stops at the meadow fence
+STABLE.path = (() => { const cx = MEADOW.x - STABLE.x, cz = MEADOW.z - STABLE.z, x0 = 9.5, z0 = 13, d = Math.hypot(x0 - cx, z0 - cz); return [x0, z0, cx + (x0 - cx) / d * MEADOW.r, cz + (z0 - cz) / d * MEADOW.r]; })();
 // trail course: a fenced sand area west of the stable with a seesaw bridge and a slalom (world centre and half sizes)
 const TRAIL = { x: -182, z: -48, hx: 21, hz: 14, y: 0 };
 // the seesaw: a plank on a pivot running along +x. theta > 0 tips the far (+x) end up; it rests on whichever end is down
@@ -316,7 +318,9 @@ const TERRAIN_GLSL = (() => {
       vec2 c = vec2(${n(STABLE.x + (STABLE.rect[0] + STABLE.rect[1]) / 2)}, ${n(STABLE.z + (STABLE.rect[2] + STABLE.rect[3]) / 2)});
       vec2 hs = vec2(${n((STABLE.rect[1] - STABLE.rect[0]) / 2)}, ${n((STABLE.rect[3] - STABLE.rect[2]) / 2)});
       vec2 tc = vec2(${n(TRAIL.x)}, ${n(TRAIL.z)}), ths = vec2(${n(TRAIL.hx)}, ${n(TRAIL.hz)});
-      return smoothstep(0.0, 1.2, length(max(abs(p - c) - hs, 0.0))) * smoothstep(0.0, 1.0, length(max(abs(p - tc) - ths, 0.0)));
+      vec2 pa = vec2(${n(STABLE.x + STABLE.path[0])}, ${n(STABLE.z + STABLE.path[1])}), pb = vec2(${n(STABLE.x + STABLE.path[2])}, ${n(STABLE.z + STABLE.path[3])}), pd = p - pa, pv = pb - pa;
+      float trackD = length(pd - pv * clamp(dot(pd, pv) / dot(pv, pv), 0.0, 1.0));   // the worn track to the pré
+      return smoothstep(0.0, 1.2, length(max(abs(p - c) - hs, 0.0))) * smoothstep(0.0, 1.0, length(max(abs(p - tc) - ths, 0.0))) * mix(0.25, 1.0, smoothstep(0.6, 1.5, trackD));
     }`;
   return s;
 })();
@@ -694,7 +698,10 @@ const looseRails = [];
   }
 })();
 
-// ---------------------------------------------------------------- stable yard: barn with boxes, tack room, office; indoor arena; hay
+// ---------------------------------------------------------------- stable yard: la ferme équestre (club house in the farmhouse, écurie, manège, hangar, stabulation, round pen, le pré)
+// Yard-local metres around STABLE (+x east, +z north). You come in from the east under the farm sign. The gravel courtyard is closed by
+// the écurie (north), the hangar à foin (north-west), the longère with the club house (south-west) and the manège (south); the round pen
+// is east of the manège, the stabulation libre north-east with its paddock beyond the yard, and a track leads north to le pré.
 const walls = [];            // solid walls the horse can't pass: world-space boxes { minX, maxX, minZ, maxZ }
 const haySpots = [];         // hay a horse can eat: { x, z, y, reach, amount, low, mesh, refillT }
 const roofs = [];            // roofs fade out when you ride inside: { mesh, region }
@@ -703,54 +710,177 @@ const stallBoxes = [];       // box interiors for the resident horses: { x, z, y
 const PLACES = {};           // named spots in the yard, in world coordinates, for the feature modules (SU.world.places)
 (() => {
   const X0 = STABLE.x, Z0 = STABLE.z, Y0 = STABLE.y;
-  const canvasTex = (w, h, draw) => {
+  const gy = (x, z) => groundH(X0 + x, Z0 + z) - Y0;           // ground height at a yard-local point, relative to the yard
+  const canvasTex = (w, h, draw, opts = {}) => {
     const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    if (opts.wrap !== false) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
   };
   const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
   const noiseTex = (base, spots, n = 2500, sz = 3) => canvasTex(256, 256, (g, w, h) => {
     g.fillStyle = base; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < n; i++) { g.fillStyle = spots[Math.floor(Math.random() * spots.length)]; g.fillRect(Math.random() * w, Math.random() * h, rnd(1, sz), rnd(1, sz)); }
+    for (let i = 0; i < n; i++) { g.fillStyle = pick(spots); g.fillRect(Math.random() * w, Math.random() * h, rnd(1, sz), rnd(1, sz)); }
   });
   const strawTex = (base, cols) => canvasTex(256, 256, (g, w, h) => {
     g.fillStyle = base; g.fillRect(0, 0, w, h); g.lineCap = 'round';
     for (let i = 0; i < 1600; i++) {
       const x = Math.random() * w, y = Math.random() * h, a = Math.random() * TAU, l = rnd(6, 22);
-      g.strokeStyle = cols[Math.floor(Math.random() * cols.length)]; g.lineWidth = rnd(1, 2.2);
+      g.strokeStyle = pick(cols); g.lineWidth = rnd(1, 2.2);
       g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
     }
   });
-  const plankTex = (cols, line) => canvasTex(256, 256, (g, w, h) => {
-    const n = 8;
+  const plankTex = (cols, line, n = 8) => canvasTex(256, 256, (g, w, h) => {
     for (let i = 0; i < n; i++) {
       g.fillStyle = cols[i % cols.length]; g.fillRect(i * w / n, 0, w / n, h);
       for (let k = 0; k < 40; k++) { g.fillStyle = 'rgba(0,0,0,0.06)'; g.fillRect(i * w / n + Math.random() * w / n, Math.random() * h, 1, rnd(10, 60)); }
       g.fillStyle = line; g.fillRect(i * w / n, 0, 2, h);
     }
   });
+  // whitewashed rubble stone: faint stones under a lime render
+  const renderTex = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#f4ead4'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) { g.fillStyle = pick(['rgba(160,150,130,0.10)', 'rgba(120,110,95,0.08)', 'rgba(255,255,255,0.25)']); g.beginPath(); g.ellipse(Math.random() * w, Math.random() * h, rnd(10, 26), rnd(6, 14), 0, 0, TAU); g.fill(); }
+    for (let i = 0; i < 2500; i++) { g.fillStyle = pick(['#ddd6c5', '#f3eee2', '#d4ccb9']); g.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); }
+  });
+  const slateTex = canvasTex(128, 128, (g, w, h) => {
+    g.fillStyle = '#3f454d'; g.fillRect(0, 0, w, h);
+    for (let r = 0; r < 8; r++) for (let c = -1; c < 7; c++) {
+      const x = c * 21 + (r % 2) * 10, y = r * 16;
+      g.fillStyle = pick(['#4b525b', '#454b53', '#525a63', '#3d434a']); g.fillRect(x + 1, y + 1, 19, 14);
+      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y + 14, 21, 2);
+    }
+  });
+  const steelTex = (a, b) => canvasTex(64, 64, (g, w, h) => { g.fillStyle = a; g.fillRect(0, 0, w, h); g.fillStyle = b; for (let i = 0; i < 4; i++) g.fillRect(i * 16, 0, 6, h); });
+  // open-boarded cladding (bardage ajouré): boards with see-through gaps
+  const slatTex = canvasTex(128, 32, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    for (let i = 0; i < 8; i++) { g.fillStyle = pick(['#7a5a3c', '#6f5135', '#836243']); g.fillRect(i * 16, 0, 11, h); g.fillStyle = 'rgba(0,0,0,0.15)'; g.fillRect(i * 16, 0, 1, h); }
+  });
+  const tileTex = canvasTex(128, 128, (g, w, h) => {
+    g.fillStyle = '#7d4a33'; g.fillRect(0, 0, w, h);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { g.fillStyle = pick(['#b65a3b', '#a85134', '#bf6545', '#a3563a']); g.fillRect(c * 32 + 1.5, r * 32 + 1.5, 29, 29); }
+  });
   const M = (o) => new THREE.MeshStandardMaterial({ roughness: 0.85, ...o });
   const mats = {
     wood: M({ map: plankTex(['#8a6240', '#82593a', '#916a46', '#7d5536'], '#4a3220') }),
     woodDark: M({ map: plankTex(['#5a3e28', '#523823', '#60432b'], '#2e1f13') }),
     kick: M({ map: plankTex(['#9b7650', '#a37e57', '#94704a'], '#5c4229') }),
-    white: M({ color: 0xece8de }),
-    panel: M({ map: canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#d9ddd5'; g.fillRect(0, 0, w, h); g.fillStyle = '#c3c8bf'; for (let i = 0; i < 4; i++) g.fillRect(i * 16, 0, 3, h); }) }),
-    roofBarn: M({ map: canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#6e2c24'; g.fillRect(0, 0, w, h); g.fillStyle = '#5a221c'; for (let i = 0; i < 4; i++) g.fillRect(i * 16, 0, 6, h); }), roughness: 0.6, transparent: true }),
-    roofHall: M({ map: canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#5d6560'; g.fillRect(0, 0, w, h); g.fillStyle = '#4c534f'; for (let i = 0; i < 4; i++) g.fillRect(i * 16, 0, 6, h); }), roughness: 0.55, transparent: true }),
+    clad: M({ map: plankTex(['#6b4a31', '#634329', '#71503a', '#5e4029'], '#2d1e12', 6) }),
+    slats: M({ map: slatTex, alphaTest: 0.5 }),
+    white: M({ color: 0xf2efe6 }),
+    render: M({ map: renderTex }),
+    stone: M({ map: noiseTex('#8f877b', ['#7d766b', '#a0978a', '#6f685f', '#b0a798'], 5000, 3) }),
     concrete: M({ map: noiseTex('#9d9a92', ['#8f8c84', '#aaa79f', '#86837c'], 4000, 2) }),
     gravel: M({ map: noiseTex('#a89c86', ['#968a74', '#b9ad96', '#8b806b', '#c2b8a3'], 6000, 3) }),
     sand: M({ map: noiseTex('#b59c74', ['#a68d66', '#c2aa82', '#9c845e'], 6000, 2), roughness: 1 }),
+    dirt: M({ map: noiseTex('#8a7356', ['#7a6449', '#9a8263', '#6e5a41', '#a38d6c'], 5000, 3), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
     straw: M({ map: strawTex('#c9a85e', ['#e0c47a', '#b8954c', '#d8b96a', '#a8873f']), roughness: 1 }),
     hay: M({ map: strawTex('#a9a259', ['#c2b768', '#8e8a45', '#b9ad5d', '#9c9a4a', '#cbbf75']), roughness: 1 }),
+    muck: M({ map: strawTex('#4a3a26', ['#5e4a2f', '#3a2c1c', '#7a6238', '#a08548']), roughness: 1 }),
+    tiles: M({ map: tileTex, roughness: 0.7 }),
     bars: new THREE.MeshStandardMaterial({ color: 0x2b2e31, metalness: 0.6, roughness: 0.4 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x9fb8c4, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.35 }),
-    leather: M({ color: 0x5a3620, roughness: 0.55 }),
-    dark: M({ color: 0x23201d }),
     metalGrey: M({ color: 0x7b8086, metalness: 0.4, roughness: 0.5 }),
+    steel: M({ color: 0x3e4a46, metalness: 0.4, roughness: 0.55 }),
+    water: M({ color: 0x3e6a76, roughness: 0.1, metalness: 0.3 }),
+    paint: M({ vertexColors: true, roughness: 0.75 }),          // every small plain-coloured thing, in one draw call
   };
-  // static geometry is merged per material, in yard-local coordinates
-  const buckets = new Map();
-  const push = (mat, g) => { if (!buckets.has(mat)) buckets.set(mat, []); buckets.get(mat).push(g); };
+  const roofMaps = { slate: slateTex, green: steelTex('#456b4c', '#3a5d41'), grey: steelTex('#5d6560', '#4c534f') };
+  // all the writing (signs, letters, name plates, posters) lives in three shared canvas atlases
+  const atlas = (W, H) => {
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'), cells = {};
+    return { cells, add(key, x, y, w, h, draw) { g.save(); g.translate(x, y); g.beginPath(); g.rect(0, 0, w, h); g.clip(); draw(g, w, h); g.restore(); cells[key] = [(x + 1) / W, 1 - (y + h - 1) / H, (x + w - 1) / W, 1 - (y + 1) / H]; },
+      mat() { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return M({ map: t, roughness: 0.75 }); } };
+  };
+  const fitText = (g, text, maxW, size, font) => { let s = size; do g.font = `bold ${s}px ${font}`; while (g.measureText(text).width > maxW && --s > 6); };
+  const signDraw = (text, bg = '#2f4a36', fg = '#f3ead2') => (g, w, h) => {
+    g.fillStyle = bg; g.fillRect(0, 0, w, h); g.strokeStyle = fg; g.lineWidth = 3; g.strokeRect(6, 6, w - 12, h - 12);
+    g.fillStyle = fg; fitText(g, text, w - 30, Math.round(h * 0.58), 'Georgia, serif'); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2 + 2);
+  };
+  const LETTERS = ['A', 'K', 'E', 'H', 'C', 'M', 'B', 'F'];
+  const NAMES = ['Comet', 'Onyx', 'Pebble', 'Biscuit', 'Hazel', 'Caramel'];
+  const SIGNS = ['Écurie', 'Sellerie', 'Bureau', 'Manège', 'Club house', 'Stabulation', 'Le pré →', '← Le pré', 'Le pré', 'Aliments'];
+  const A1 = atlas(512, 512), A2 = atlas(512, 512), A3 = atlas(512, 512);
+  LETTERS.forEach((ch, i) => A1.add(ch, (i % 4) * 128, Math.floor(i / 4) * 128, 128, 128, (g, w, h) => {
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.strokeStyle = '#111'; g.lineWidth = 7; g.strokeRect(7, 7, w - 14, h - 14);
+    g.fillStyle = '#111'; g.font = 'bold 96px Arial, Helvetica, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ch, w / 2, h / 2 + 5);
+  }));
+  NAMES.forEach((n, i) => A1.add('plate:' + n, (i % 4) * 128, 256 + Math.floor(i / 4) * 32, 128, 32, signDraw(n, '#f3ecdc', '#3b2a1a')));
+  SIGNS.forEach((s, i) => A2.add(s, (i % 2) * 256, Math.floor(i / 2) * 64, 256, 64, signDraw(s)));
+  // posters: a side-view horse drawn as one path, so it can be filled with any coat
+  const horsePath = (ox, oy, s) => {
+    const p = new Path2D(), P = (x, y) => [ox + x * s, oy + y * s];
+    p.ellipse(...P(100, 72), 56 * s, 26 * s, 0, 0, TAU);
+    const poly = (pts) => { p.moveTo(...P(...pts[0])); for (const q of pts.slice(1)) p.lineTo(...P(...q)); p.closePath(); };
+    poly([[130, 56], [148, 22], [164, 14], [176, 22], [162, 66], [150, 90]]);
+    poly([[148, 22], [157, 4], [161, -4], [166, 8], [198, 40], [196, 50], [186, 52], [164, 32]]);
+    for (const [x, w] of [[132, 10], [146, 10], [54, 11], [70, 10]]) p.rect(...P(x, 80), w * s, 60 * s);
+    return p;
+  };
+  const drawHorse = (g, ox, oy, s, body, mane, legs = body, patches = false) => {
+    const p = horsePath(ox, oy, s);
+    g.fillStyle = body; g.fill(p);
+    if (patches) { g.save(); g.clip(p); g.fillStyle = '#f7f4ee'; for (const [x, y, r] of [[80, 70, 22], [120, 60, 16], [60, 95, 14], [150, 40, 10]]) { g.beginPath(); g.ellipse(ox + x * s, oy + y * s, r * s * 1.3, r * s, 0.4, 0, TAU); g.fill(); } g.restore(); }
+    if (legs !== body) { g.save(); g.clip(p); g.fillStyle = legs; g.fillRect(ox + 50 * s, oy + 108 * s, 110 * s, 40 * s); g.restore(); }
+    g.lineCap = 'round'; g.strokeStyle = mane; g.lineWidth = 7 * s;
+    g.beginPath(); g.moveTo(ox + 150 * s, oy + 18 * s); g.quadraticCurveTo(ox + 138 * s, oy + 34 * s, ox + 132 * s, oy + 56 * s); g.stroke();
+    g.lineWidth = 9 * s; g.beginPath(); g.moveTo(ox + 46 * s, oy + 62 * s); g.quadraticCurveTo(ox + 26 * s, oy + 80 * s, ox + 32 * s, oy + 116 * s); g.stroke();
+    g.fillStyle = '#222'; for (const [x, w] of [[132, 10], [146, 10], [54, 11], [70, 10]]) g.fillRect(ox + x * s, oy + 134 * s, w * s, 6 * s);
+    g.beginPath(); g.arc(ox + 178 * s, oy + 27 * s, 2.2 * s, 0, TAU); g.fill();
+  };
+  const posterFrame = (g, w, h, title) => {
+    g.fillStyle = '#fbf6e8'; g.fillRect(0, 0, w, h); g.strokeStyle = '#2f4a36'; g.lineWidth = 6; g.strokeRect(3, 3, w - 6, h - 6);
+    g.fillStyle = '#2f4a36'; g.font = 'bold 20px Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(title, w / 2, 20);
+  };
+  A3.add('anatomy', 0, 0, 512, 224, (g, w, h) => {
+    posterFrame(g, w, h, 'Les parties du cheval');
+    const ox = 140, oy = 46, s = 1.05; drawHorse(g, ox, oy, s, '#8a5530', '#2a1d14', '#2a1d14');
+    g.font = 'bold 14px Arial, sans-serif'; g.textBaseline = 'middle';
+    const L = [['la tête', 180, 30, 400, 50], ['la crinière', 146, 30, 400, 72], ['l\'encolure', 152, 50, 400, 94], ['le poitrail', 156, 80, 400, 116],
+      ['le genou', 138, 110, 400, 150], ['le sabot', 150, 136, 400, 190], ['le garrot', 128, 50, 112, 48], ['le dos', 96, 46, 112, 70],
+      ['la croupe', 58, 52, 112, 92], ['la queue', 34, 94, 112, 120], ['le ventre', 100, 98, 112, 150], ['le jarret', 60, 112, 112, 190]];
+    for (const [t, px, py, lx, ly] of L) {
+      const x = ox + px * s, y = oy + py * s, left = lx < 200;
+      g.strokeStyle = '#555'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(left ? lx + 4 : lx - 4, ly); g.lineTo(x, y); g.stroke();
+      g.fillStyle = '#c0392b'; g.beginPath(); g.arc(x, y, 3, 0, TAU); g.fill();
+      g.fillStyle = '#222'; g.textAlign = left ? 'right' : 'left'; g.fillText(t, lx, ly);
+    }
+  });
+  A3.add('robes', 0, 224, 256, 192, (g, w, h) => {
+    posterFrame(g, w, h, 'Les robes');
+    const R = [['Alezan', '#b0602c', '#c47a3a'], ['Bai', '#7a4122', '#1b1410', '#1b1410'], ['Noir', '#1f1c1a', '#0c0b0a'], ['Gris', '#cfcfca', '#9a9a96'], ['Pie', '#7a4122', '#3a2414', '#7a4122', true], ['Palomino', '#dcb265', '#f4ecd0']];
+    R.forEach(([n, b, m, l, p], i) => {
+      const cx = (i % 2) * 124 + 8, cy = 36 + Math.floor(i / 2) * 50;
+      drawHorse(g, cx, cy + 4, 0.26, b, m, l ?? b, p);
+      g.fillStyle = '#222'; g.font = 'bold 15px Arial, sans-serif'; g.textAlign = 'left'; g.fillText(n, cx + 56, cy + 22);
+    });
+  });
+  A3.add('choc', 256, 224, 256, 96, (g, w, h) => {
+    g.fillStyle = '#3b2a1e'; g.fillRect(0, 0, w, h); g.strokeStyle = '#e9dcc0'; g.lineWidth = 4; g.strokeRect(5, 5, w - 10, h - 10);
+    g.fillStyle = '#e9dcc0'; g.fillRect(22, 34, 34, 38); g.strokeStyle = '#e9dcc0'; g.lineWidth = 5; g.beginPath(); g.arc(58, 52, 10, -1.2, 1.2); g.stroke();
+    g.fillStyle = '#6b3b1f'; g.fillRect(25, 37, 28, 8);
+    g.strokeStyle = 'rgba(233,220,192,0.7)'; g.lineWidth = 2; for (const x of [30, 39, 48]) { g.beginPath(); g.moveTo(x, 30); g.quadraticCurveTo(x - 5, 22, x, 14); g.stroke(); }
+    g.fillStyle = '#e9dcc0'; g.textAlign = 'left'; g.textBaseline = 'middle'; fitText(g, 'Chocolat chaud', 170, 24, 'Georgia, serif'); g.fillText('Chocolat chaud', 78, 38);
+    g.font = '15px Georgia, serif'; g.fillText('Goûter · jus de pomme', 78, 66);
+  });
+  A3.add('notice', 256, 320, 256, 96, (g, w, h) => {
+    g.fillStyle = '#b8895a'; g.fillRect(0, 0, w, h);
+    const cols = ['#f6f1e4', '#ffe58a', '#a8d8ff', '#ffc2c2', '#c9f0b4'];
+    for (let i = 0; i < 8; i++) { g.save(); g.translate(12 + (i % 4) * 60 + Math.random() * 6, 8 + Math.floor(i / 4) * 44 + Math.random() * 4); g.rotate((Math.random() - 0.5) * 0.2); g.fillStyle = cols[i % cols.length]; g.fillRect(0, 0, 48, 34); g.fillStyle = 'rgba(0,0,0,0.35)'; for (let l = 0; l < 3; l++) g.fillRect(5, 8 + l * 8, 25 + Math.random() * 14, 2); g.fillStyle = '#c0392b'; g.beginPath(); g.arc(24, 3, 3, 0, TAU); g.fill(); g.restore(); }
+  });
+  A3.add('farm', 0, 416, 512, 96, (g, w, h) => {
+    g.fillStyle = '#2f4a36'; g.fillRect(0, 0, w, h); g.strokeStyle = '#e8d9a8'; g.lineWidth = 4; g.strokeRect(7, 7, w - 14, h - 14);
+    for (const x of [44, w - 44]) { g.strokeStyle = '#d9b44a'; g.lineWidth = 9; g.beginPath(); g.arc(x, 44, 18, 0.35 * Math.PI, 2.65 * Math.PI, false); g.stroke(); }
+    g.fillStyle = '#f3ead2'; g.textAlign = 'center'; g.textBaseline = 'middle'; fitText(g, 'Ferme équestre du Loret', w - 150, 40, 'Georgia, serif'); g.fillText('Ferme équestre du Loret', w / 2, h / 2 + 2);
+  });
+  Object.assign(mats, { letters: A1.mat(), signs: A2.mat(), posters: A3.mat() });
+  const cellOf = (key) => A1.cells[key] ? [mats.letters, A1.cells[key]] : A2.cells[key] ? [mats.signs, A2.cells[key]] : [mats.posters, A3.cells[key]];
+
+  // static geometry is merged per material, in yard-local coordinates (flat floors don't cast shadows)
+  const buckets = new Map(), flats = new Map();
+  const push = (mat, g, flat = false) => { const B = flat ? flats : buckets; if (!B.has(mat)) B.set(mat, []); B.get(mat).push(g); return g; };
   const scaleUV = (g, w, h, d, tile) => {
     const uv = g.attributes.uv, dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
     for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * dims[f][0] / tile, uv.getY(i) * dims[f][1] / tile); }
@@ -758,14 +888,112 @@ const PLACES = {};           // named spots in the yard, in world coordinates, f
   function box(mat, w, h, d, x, y, z, ry = 0, tile = 1.5) {
     const g = new THREE.BoxGeometry(w, h, d); scaleUV(g, w, h, d, tile);
     if (ry) g.rotateY(ry);
-    g.translate(x, y, z); push(mat, g); return g;
+    g.translate(x, y, z); return push(mat, g);
   }
+  function floor(mat, x0, x1, z0, z1, y, tile = 2) {
+    const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2), uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (x1 - x0) / tile, uv.getY(i) * (z1 - z0) / tile);
+    g.translate((x0 + x1) / 2, y, (z0 + z1) / 2); return push(mat, g, true);
+  }
+  // vertex-coloured pieces: all go into the one 'paint' mesh
+  const paintGeo = (g, col) => {
+    const c = new THREE.Color(col), n = g.attributes.position.count, a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
+    g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return push(mats.paint, g);
+  };
+  const pbox = (col, w, h, d, x, y, z, ry = 0) => { const g = new THREE.BoxGeometry(w, h, d); if (ry) g.rotateY(ry); g.translate(x, y, z); return paintGeo(g, col); };
+  const pcyl = (col, rt, rb, h, x, y, z, seg = 12, rx = 0, rz = 0) => { const g = new THREE.CylinderGeometry(rt, rb, h, seg); if (rx) g.rotateX(rx); if (rz) g.rotateZ(rz); g.translate(x, y, z); return paintGeo(g, col); };
+  const psph = (col, r, x, y, z, sx = 1, sy = 1, sz = 1, seg = 10) => { const g = new THREE.SphereGeometry(r, seg, Math.max(4, seg - 4)).scale(sx, sy, sz); g.translate(x, y, z); return paintGeo(g, col); };
   const toWorldBox = (x0, x1, z0, z1) => ({ minX: X0 + Math.min(x0, x1), maxX: X0 + Math.max(x0, x1), minZ: Z0 + Math.min(z0, z1), maxZ: Z0 + Math.max(z0, z1) });
+  const solid = (x0, x1, z0, z1) => walls.push(toWorldBox(x0, x1, z0, z1));
   // a straight, axis-aligned wall from (x0,z0) to (x1,z1), standing on yb, with collision
   function wall(mat, x0, z0, x1, z1, h, t = 0.2, yb = 0, collide = true) {
     const len = Math.hypot(x1 - x0, z1 - z0), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
     if (x0 === x1) box(mat, t, h, len, cx, yb + h / 2, cz); else box(mat, len, h, t, cx, yb + h / 2, cz);
     if (collide) walls.push(x0 === x1 ? toWorldBox(cx - t / 2 - 0.05, cx + t / 2 + 0.05, z0, z1) : toWorldBox(x0, x1, cz - t / 2 - 0.05, cz + t / 2 + 0.05));
+  }
+  // the same with openings: holes = [{ a, b (along the wall), y0, y1, glass, out (+1/-1: which side is outside, for frame and shutters) }]
+  const SHUTTER = 0x6d8ca0;
+  function wallO(mat, x0, z0, x1, z1, h, t, holes = []) {
+    const alongX = z0 === z1, k = alongX ? z0 : x0, c1 = alongX ? x1 : z1;
+    const seg = (a, b, y0, y1, collide) => {
+      if (b - a < 0.01 || y1 - y0 < 0.01) return;
+      if (alongX) box(mat, b - a, y1 - y0, t, (a + b) / 2, (y0 + y1) / 2, k); else box(mat, t, y1 - y0, b - a, k, (y0 + y1) / 2, (a + b) / 2);
+      if (collide) walls.push(alongX ? toWorldBox(a, b, k - t / 2 - 0.05, k + t / 2 + 0.05) : toWorldBox(k - t / 2 - 0.05, k + t / 2 + 0.05, a, b));
+    };
+    let p = alongX ? x0 : z0;
+    for (const o of [...holes].sort((u, v) => u.a - v.a)) {
+      seg(p, o.a, 0, h, true); seg(o.a, o.b, 0, o.y0, o.y0 > 0.05); seg(o.a, o.b, o.y1, h, false);
+      const m = (o.a + o.b) / 2, w = o.b - o.a, hh = o.y1 - o.y0, ym = (o.y0 + o.y1) / 2;
+      if (o.glass) alongX ? box(mats.glass, w, hh, 0.03, m, ym, k) : box(mats.glass, 0.03, hh, w, k, ym, m);
+      if (o.out) winDeco(alongX, k + o.out * (t / 2 + 0.03), o.out, o.a, o.b, o.y0, o.y1, o.shutters !== false);
+      p = o.b;
+    }
+    seg(p, c1, 0, h, true);
+  }
+  // granite surround and open shutters on the outside face of an opening (or a fake window painted on a wall when fake = true)
+  function winDeco(alongX, f, out, a, b, y0, y1, shutters = true, fake = false) {
+    const w = b - a, hh = y1 - y0, m = (a + b) / 2, ym = (y0 + y1) / 2;
+    const B = (mat, lw, lh, ld, along, y, off) => alongX ? box(mat, lw, lh, ld, along, y, f + out * off) : box(mat, ld, lh, lw, f + out * off, y, along);
+    if (fake) { B(mats.glass, w, hh, 0.02, m, ym, 0); alongX ? pbox(0x2a3238, w, hh, 0.01, m, ym, f - out * 0.005) : pbox(0x2a3238, 0.01, hh, w, f - out * 0.005, ym, m); }
+    B(mats.stone, w + 0.36, 0.18, 0.08, m, y1 + 0.09, 0); if (y0 > 0.05) B(mats.stone, w + 0.3, 0.08, 0.16, m, y0 - 0.04, 0.03);
+    for (const s of [-1, 1]) {
+      B(mats.stone, 0.18, hh, 0.08, m + s * (w / 2 + 0.09), ym, 0);
+      if (shutters && y0 > 0.05) alongX ? pbox(SHUTTER, w / 2, hh, 0.05, m + s * (w * 0.75 + 0.2), ym, f + out * 0.03) : pbox(SHUTTER, 0.05, hh, w / 2, f + out * 0.03, ym, m + s * (w * 0.75 + 0.2));
+    }
+  }
+  // triangular / trapezoid gables: a polygon in the (z, y) plane extruded across x (prismX), or in the (x, y) plane across z (prismZ)
+  const prism = (mat, pts, t, tile) => {
+    const sh = new THREE.Shape(pts.map(([s, y]) => new THREE.Vector2(s, y))), g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false });
+    const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / tile, uv.getY(i) / tile);
+    return g;
+  };
+  const prismX = (mat, x, t, pts, yb = 0, tile = 1.5) => { const g = prism(mat, pts, t, tile); g.rotateY(-Math.PI / 2); g.translate(x + t / 2, yb, 0); return push(mat, g); };
+  const prismZ = (mat, z, t, pts, yb = 0, tile = 1.5) => { const g = prism(mat, pts, t, tile); g.translate(0, yb, z - t / 2); return push(mat, g); };
+  // a roof slab across x0..x1 from (za, ya) to (zb, yb), extended by ea / eb beyond its ends
+  const slab = (x0, x1, za, ya, zb, yb, ea, eb, ox = 0.4, tile = 1) => {
+    const dz = zb - za, dy = yb - ya, L0 = Math.hypot(dz, dy), ux = dz / L0, uy = dy / L0, L = L0 + ea + eb, w = x1 - x0 + 2 * ox;
+    const g = new THREE.BoxGeometry(w, 0.12, L); scaleUV(g, w, 0.12, L, tile); g.rotateX(Math.atan2(-dy, dz));
+    g.translate((x0 + x1) / 2, (ya - uy * ea + yb + uy * eb) / 2 + 0.06, (za - ux * ea + zb + ux * eb) / 2); return g;
+  };
+  // every roof is its own mesh with its own material, so it can fade when you go inside
+  const roofMesh = (map, parts, region, rough = 0.6) => {
+    const m = new THREE.Mesh(mergeGeometries(parts), M({ map, roughness: rough, transparent: true }));
+    m.castShadow = true; m.receiveShadow = true; root.add(m); roofs.push({ mesh: m, region }); return m;
+  };
+  const pitched = (map, x0, x1, z0, z1, eave, ridge, { ox = 0.4, oS = 0.5, oN = 0.5, gable = null, gt = 0.2, yb = 0 } = {}) => {
+    const zc = (z0 + z1) / 2;
+    const parts = [slab(x0, x1, zc, ridge + yb, z0, eave + yb, 0, oS, ox), slab(x0, x1, zc, ridge + yb, z1, eave + yb, 0, oN, ox)];
+    if (gable) for (const x of [x0, x1]) prismX(gable, x, gt, [[z0, eave], [z1, eave], [zc, ridge]], yb);
+    return roofMesh(map, parts, toWorldBox(x0, x1, z0, z1));
+  };
+  // a beam between two points (fence rails, gates)
+  const _bx = new V3(), _by = new V3(), _bz = new V3(), _bm = new THREE.Matrix4(), _up = new V3(0, 1, 0);
+  function beam(mat, ax, ay, az, bx, by, bz, w, h, tile = 1.5) {
+    const L = Math.hypot(bx - ax, by - ay, bz - az), g = new THREE.BoxGeometry(L, h, w); scaleUV(g, L, h, w, tile);
+    _bx.set(bx - ax, by - ay, bz - az).normalize(); _bz.crossVectors(_bx, _up).normalize(); _by.crossVectors(_bz, _bx);
+    _bm.makeBasis(_bx, _by, _bz).setPosition((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2); g.applyMatrix4(_bm);
+    return push(mat, g);
+  }
+  // collision along a slanted line: short AABBs so the boxes stay thin
+  function lineWalls(x0, z0, x1, z1, t = 0.12, maxLen = 0.8) {
+    const n = x0 === x1 || z0 === z1 ? 1 : Math.ceil(Math.hypot(x1 - x0, z1 - z0) / maxLen);
+    for (let i = 0; i < n; i++) {
+      const ax = lerp(x0, x1, i / n), az = lerp(z0, z1, i / n), bx = lerp(x0, x1, (i + 1) / n), bz = lerp(z0, z1, (i + 1) / n);
+      solid(Math.min(ax, bx) - t, Math.max(ax, bx) + t, Math.min(az, bz) - t, Math.max(az, bz) + t);
+    }
+  }
+  // post-and-rail fence that follows the ground
+  function fenceRun(x0, z0, x1, z1, { step = 2.5, rails = [0.45, 0.85, 1.25], postH = 1.45, rail = mats.wood, post = mats.woodDark, collide = true } = {}) {
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, z1 - z0) / step));
+    let px = 0, pz = 0, py = 0;
+    for (let i = 0; i <= n; i++) {
+      const x = lerp(x0, x1, i / n), z = lerp(z0, z1, i / n), y = gy(x, z);
+      box(post, 0.14, postH + 0.2, 0.14, x, y + postH / 2 - 0.1, z, 0, 1);
+      if (i) for (const r of rails) beam(rail, px, py + r, pz, x, y + r, z, 0.05, 0.13);
+      px = x; pz = z; py = y;
+    }
+    if (collide) lineWalls(x0, z0, x1, z1);
   }
   const barPos = [];
   // a stable partition: solid planks to 1.3 m, bars to 2.3 m, a rail on top
@@ -776,217 +1004,380 @@ const PLACES = {};           // named spots in the yard, in world coordinates, f
     const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
     if (x0 === x1) box(mats.woodDark, 0.1, 0.08, len, cx, 2.3, cz); else box(mats.woodDark, len, 0.08, 0.1, cx, 2.3, cz);
   }
-  const textBoard = (text, w, h, bg = '#243a2c', fg = '#f1ead8') => {
-    const t = canvasTex(512, Math.round(512 * h / w), (g, cw, ch) => {
-      g.fillStyle = bg; g.fillRect(0, 0, cw, ch); g.strokeStyle = fg; g.lineWidth = 6; g.strokeRect(10, 10, cw - 20, ch - 20);
-      g.fillStyle = fg; g.font = `bold ${Math.round(ch * 0.5)}px Georgia, serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, cw / 2, ch / 2 + 2);
-    });
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: t, roughness: 0.7 }));
-    m.castShadow = true; return m;
-  };
+  // a board showing one atlas cell, facing ry (0 = +z), with a wooden backing unless back = false
+  function board(key, w, h, x, y, z, ry, back = true) {
+    const [mat, [u0, v0, u1, v1]] = cellOf(key), g = new THREE.PlaneGeometry(w, h), uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, lerp(u0, u1, uv.getX(i)), lerp(v0, v1, uv.getY(i)));
+    g.rotateY(ry); g.translate(x, y, z); push(mat, g);
+    if (back) { const nx = Math.sin(ry), nz = Math.cos(ry); box(mats.woodDark, w + 0.08, h + 0.08, 0.04, x - nx * 0.025, y, z - nz * 0.025, ry, 1); }
+  }
   const root = new THREE.Group(); root.position.set(X0, Y0, Z0); scene.add(root);
-  const place = (m, x, y, z, ry = 0) => { m.position.set(x, y, z); m.rotation.y = ry; root.add(m); return m; };
-  const shadowed = (m) => { m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); return m; };
-
-  // ---- hard-standing for the whole yard
-  const [rx0, rx1, rz0, rz1] = STABLE.rect;
-  { const g = new THREE.PlaneGeometry(rx1 - rx0, rz1 - rz0).rotateX(-Math.PI / 2); const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (rx1 - rx0) / 3, uv.getY(i) * (rz1 - rz0) / 3);
-    const m = new THREE.Mesh(g, mats.gravel); m.receiveShadow = true; place(m, (rx0 + rx1) / 2, 0.01, (rz0 + rz1) / 2); }
-
-  // ---- barn: x -14..14, z -6..6. Aisle along x (|z| < 1.6). Boxes either side; tack room and office at the west end.
-  const BX0 = -14, BX1 = 14, BZ = 6, AZ = 1.6, ROOM_X = -9, WALL_H = 3.2;
-  const BOX_W = (BX1 - ROOM_X) / 6;
-  box(mats.concrete, BX1 - BX0, 0.04, BZ * 2, 0, 0.02, 0, 0, 2);
-  // outer walls with the aisle doorways at each end
-  wall(mats.wood, BX0, BZ, BX1, BZ, WALL_H, 0.2);
-  wall(mats.wood, BX0, -BZ, BX1, -BZ, WALL_H, 0.2);
-  for (const x of [BX0, BX1]) { wall(mats.wood, x, -BZ, x, -AZ - 0.2, WALL_H, 0.2); wall(mats.wood, x, AZ + 0.2, x, BZ, WALL_H, 0.2); box(mats.woodDark, 0.25, 0.4, AZ * 2 + 0.8, x, WALL_H - 0.2, 0); }
-  // sliding doors pushed open beside each doorway
-  for (const x of [BX0, BX1]) for (const sz of [-1, 1]) box(mats.woodDark, 0.08, 2.9, 1.9, x + Math.sign(x) * 0.18, 1.45, sz * (AZ + 1.2));
-  // boxes: 6 a side. The five horses you can ride each have an open box with hay (in BREEDS order); one more open box has hay.
-  const RIDEABLE = { n0: 'Comet', n2: 'Onyx', n4: 'Pebble', s1: 'Biscuit', s3: 'Hazel' };
-  const openBoxes = new Set([...Object.keys(RIDEABLE), 's5']);
-  for (const side of [1, -1]) {
-    const tag = side > 0 ? 'n' : 's', zFront = side * AZ, zBack = side * BZ;
-    for (let i = 1; i <= 6; i++) partition(ROOM_X + i * BOX_W, zFront, ROOM_X + i * BOX_W, zBack);
-    for (let i = 0; i < 6; i++) {
-      const xa = ROOM_X + i * BOX_W, xb = xa + BOX_W, cx = (xa + xb) / 2, cz = side * (AZ + BZ) / 2, key = tag + i;
-      box(mats.straw, BOX_W - 0.1, 0.04, BZ - AZ - 0.1, cx, 0.045, cz, 0, 1.2);                         // straw bedding
-      const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.14, 0.32, 14), new THREE.MeshStandardMaterial({ color: [0x2f6fb5, 0x3a8a4a, 0xb53a2f][i % 3], roughness: 0.5 }));
-      place(shadowed(bucket), xb - 0.3, 0.2, zFront + side * 0.3);
-      if (openBoxes.has(key)) {
-        // front with a doorway, sliding door pushed aside
-        partition(xa, zFront, cx - 0.75, zFront); partition(cx + 0.75, zFront, xb, zFront);
-        box(mats.woodDark, 1.45, 2.2, 0.06, cx - 1.2, 1.15, zFront - side * 0.1);
-      } else partition(xa, zFront, xb, zFront);
-      // name plate on each box: on the door, or beside the doorway when it's open
-      if (RIDEABLE[key]) {
-        const plate = textBoard(RIDEABLE[key], 0.6, 0.18, '#f3ecdc', '#3b2a1a');
-        place(plate, cx + 1.3, 1.55, zFront - side * 0.06, side > 0 ? Math.PI : 0);
-      } else if (!openBoxes.has(key)) {
-        const plate = textBoard(['Bramble', 'Juniper', 'Pepper', 'Willow', 'Poppy', 'Clover', 'Maple', 'Sable', 'Rosie', 'Sorrel', 'Tilly', 'Fern'][(side > 0 ? 0 : 6) + i], 0.6, 0.18, '#f3ecdc', '#3b2a1a');
-        place(plate, cx, 1.55, zFront - side * 0.06, side > 0 ? Math.PI : 0);
-      }
-      if (openBoxes.has(key)) {
-        const hay = { x: X0 + cx - 0.4, z: Z0 + zBack - side * 0.7, reach: 1.0, low: true, size: 0.75 };
-        haySpots.push(hay);
-        if (RIDEABLE[key]) stallBoxes.push({ name: RIDEABLE[key], x: X0 + cx + 0.2, z: Z0 + cz - side * 0.5, yaw: Math.atan2(hay.x - (X0 + cx + 0.2), hay.z - (Z0 + cz - side * 0.5)), hay });
-      }
-    }
-  }
-  // tack room (north) and office (south) at the west end
-  for (const side of [1, -1]) {
-    const zFront = side * AZ, zBack = side * BZ;
-    wall(mats.white, ROOM_X, zFront, ROOM_X, zBack, WALL_H, 0.15);
-    // front wall with a door (and the office has a window onto the aisle)
-    wall(mats.white, BX0, zFront, -12.3, zFront, WALL_H, 0.15);
-    wall(mats.white, -11.1, zFront, side > 0 ? ROOM_X : -10.6, zFront, WALL_H, 0.15);
-    box(mats.white, 1.2, WALL_H - 2.15, 0.15, -11.7, 2.15 + (WALL_H - 2.15) / 2, zFront);                    // over the door
-    box(mats.woodDark, 0.08, 2.1, 0.9, -12.3 + 0.08, 1.05, zFront - side * 0.45, 0);                         // door, swung open
-    if (side < 0) {
-      box(mats.white, 1.6, 1.0, 0.15, -9.8, 0.5, zFront); box(mats.white, 1.6, WALL_H - 2.0, 0.15, -9.8, 2.0 + (WALL_H - 2.0) / 2, zFront);
-      box(mats.glass, 1.6, 1.0, 0.03, -9.8, 1.5, zFront); walls.push(toWorldBox(-10.6, ROOM_X, zFront - 0.12, zFront + 0.12));
-    }
-    box(mats.wood, ROOM_X - BX0, 0.03, BZ - AZ, (BX0 + ROOM_X) / 2, 0.05, side * (AZ + BZ) / 2, 0, 1.2);       // wooden floor
-    const sign = textBoard(side > 0 ? 'Tack room' : 'Office', 1.3, 0.32);
-    place(sign, -11.7, 2.55, zFront - side * 0.09, side > 0 ? Math.PI : 0);
-  }
-  // tack room fittings: saddles on wall racks, bridles on hooks, a trunk and a bench
-  {
-    const saddleGeo = new THREE.SphereGeometry(0.26, 18, 10, 0, TAU, 0, Math.PI / 2).scale(0.85, 0.55, 1.35);
-    for (let i = 0; i < 3; i++) {
-      const x = -13.1 + i * 1.3, z = BZ - 0.45;
-      box(mats.woodDark, 0.08, 0.08, 0.5, x, 1.15, z + 0.1);                                                     // rack arm
-      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.62), mats.white); place(shadowed(pad), x, 1.22, z, Math.PI / 2);
-      const saddle = new THREE.Mesh(saddleGeo, mats.leather); place(shadowed(saddle), x, 1.23, z, Math.PI / 2);
-      for (const sx of [-1, 1]) { const flap = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.36, 0.34), mats.leather); flap.rotation.z = sx * 0.25; place(shadowed(flap), x + sx * 0.0, 1.05, z + sx * 0.2, Math.PI / 2); }
-    }
-    for (let i = 0; i < 3; i++) {
-      const z = 2.5 + i * 1.1;
-      box(mats.metalGrey, 0.12, 0.04, 0.04, BX0 + 0.16, 1.85, z);
-      const loop = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.012, 6, 20), mats.leather); loop.scale.set(1, 1.6, 1); place(shadowed(loop), BX0 + 0.2, 1.6, z, Math.PI / 2);
-      const reins = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.01, 6, 20), mats.leather); reins.scale.set(1, 1.8, 1); place(reins, BX0 + 0.22, 1.42, z + 0.03, Math.PI / 2);
-    }
-    box(mats.woodDark, 1.0, 0.55, 0.55, -9.9, 0.3, 4.9);                                                         // tack trunk
-    box(mats.metalGrey, 1.02, 0.04, 0.57, -9.9, 0.58, 4.9);
-    box(mats.wood, 1.6, 0.06, 0.4, -12.5, 0.45, 2.3); box(mats.woodDark, 0.06, 0.42, 0.36, -13.2, 0.22, 2.3); box(mats.woodDark, 0.06, 0.42, 0.36, -11.8, 0.22, 2.3);   // bench
-    const rugCols = [0x2f4f8a, 0x8a2f3a, 0x2f7a5a];
-    rugCols.forEach((c, i) => { const rug = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.7, 0.9), M({ color: c })); place(shadowed(rug), ROOM_X - 0.15, 1.25 - i * 0.02, 2.4 + i * 1.05); });
-    box(mats.woodDark, 0.05, 0.05, 3.6, ROOM_X - 0.12, 1.62, 3.8);                                              // rug rail
-  }
-  // office: desk with a computer and papers, chair, filing cabinet, notice board, a plant
-  {
-    box(mats.wood, 1.5, 0.05, 0.7, -12.6, 0.76, -5.4); for (const dx of [-0.7, 0.7]) box(mats.woodDark, 0.05, 0.74, 0.65, -12.6 + dx, 0.37, -5.4);
-    const screen = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.34, 0.03), M({ color: 0x111111 })); place(shadowed(screen), -12.6, 1.05, -5.6);
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.3), new THREE.MeshStandardMaterial({ color: 0x8fc3ff, emissive: 0x4f86c8, emissiveIntensity: 0.9 })); place(glow, -12.6, 1.05, -5.58);
-    box(mats.dark, 0.06, 0.12, 0.06, -12.6, 0.84, -5.62);
-    for (let i = 0; i < 3; i++) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.01, 0.3), mats.white); place(p, -13.1 + i * 0.05, 0.79 + i * 0.005, -5.25, 0.2 * i); }
-    const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.09, 12), M({ color: 0xd9542f })); place(mug, -12.0, 0.83, -5.2);
-    box(mats.dark, 0.45, 0.05, 0.45, -12.6, 0.47, -4.6); box(mats.dark, 0.45, 0.5, 0.05, -12.6, 0.75, -4.38); box(mats.metalGrey, 0.05, 0.45, 0.05, -12.6, 0.23, -4.6);   // chair
-    box(mats.metalGrey, 0.5, 1.3, 0.6, -9.5, 0.65, -5.6); for (let i = 0; i < 3; i++) box(mats.dark, 0.2, 0.03, 0.02, -9.5, 0.3 + i * 0.4, -5.29);   // filing cabinet
-    const board = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), new THREE.MeshStandardMaterial({ roughness: 0.9, map: canvasTex(256, 160, (g, w, h) => {
-      g.fillStyle = '#b8895a'; g.fillRect(0, 0, w, h);
-      const cols = ['#f6f1e4', '#ffe58a', '#a8d8ff', '#ffc2c2', '#c9f0b4'];
-      for (let i = 0; i < 9; i++) { g.save(); g.translate(20 + (i % 3) * 78 + Math.random() * 10, 15 + Math.floor(i / 3) * 48 + Math.random() * 6); g.rotate((Math.random() - 0.5) * 0.2); g.fillStyle = cols[i % cols.length]; g.fillRect(0, 0, 55, 38); g.fillStyle = 'rgba(0,0,0,0.35)'; for (let l = 0; l < 4; l++) g.fillRect(5, 7 + l * 7, 30 + Math.random() * 15, 2); g.fillStyle = '#c0392b'; g.beginPath(); g.arc(27, 3, 3, 0, TAU); g.fill(); g.restore(); }
-    }) }));
-    place(board, BX0 + 0.12, 1.6, -3.6, Math.PI / 2);
-    const rosette = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), M({ color: 0x2a62c9 })); place(rosette, BX0 + 0.13, 1.95, -2.6, Math.PI / 2);
-    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.12, 0.3, 12), M({ color: 0xa65a3a })); place(shadowed(pot), -9.5, 0.15, -2.1);
-    const plant = new THREE.Mesh(new THREE.IcosahedronGeometry(0.28, 1), M({ color: 0x3f7a35 })); place(shadowed(plant), -9.5, 0.5, -2.1);
-  }
-  // roof: two pitched halves along the barn, and gable ends
-  {
-    const ridge = 5.6, eave = WALL_H, run = BZ + 0.6, ang = Math.atan2(ridge - eave, run), len = Math.hypot(ridge - eave, run);
-    const g = mergeGeometries([-1, 1].map(sz => { const b = new THREE.BoxGeometry(BX1 - BX0 + 1.0, 0.12, len); scaleUV(b, BX1 - BX0 + 1, 0.12, len, 1); b.rotateX(sz * ang); b.translate(0, (ridge + eave) / 2, sz * run / 2); return b; }));
-    const roof = new THREE.Mesh(g, mats.roofBarn); roof.castShadow = true; roof.receiveShadow = true; place(roof, 0, 0, 0);
-    roofs.push({ mesh: roof, region: toWorldBox(BX0, BX1, -BZ, BZ) });
-    const gable = new THREE.BufferGeometry(); gable.setAttribute('position', new THREE.Float32BufferAttribute([0, eave, -BZ, 0, eave, BZ, 0, ridge, 0], 3)); gable.computeVertexNormals();
-    for (const x of [BX0, BX1]) { const m = new THREE.Mesh(gable, new THREE.MeshStandardMaterial({ map: mats.wood.map, roughness: 0.85, side: THREE.DoubleSide })); m.castShadow = true; place(m, x, 0, 0); }
-    const sign = textBoard('Stables', 2.2, 0.55); place(sign, BX1 + 0.12, 3.75, 0, Math.PI / 2);
-    interiors.push({ ...toWorldBox(BX0 + 0.2, BX1 - 0.2, -BZ + 0.2, BZ - 0.2), overWalls: 3.6 });   // look over the box walls
-  }
-
-  // ---- indoor arena: x -20..20, z -34..-14, door in the north wall facing the barn
-  const AX0 = -20, AX1 = 20, AZ0 = -34, AZ1 = -14, AH = 4.5, DOOR = 3.2;
-  { const g = new THREE.PlaneGeometry(AX1 - AX0, AZ1 - AZ0).rotateX(-Math.PI / 2); const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 10, uv.getY(i) * 5);
-    const m = new THREE.Mesh(g, mats.sand); m.receiveShadow = true; place(m, 0, 0.03, (AZ0 + AZ1) / 2); }
-  const hallWall = (x0, z0, x1, z1) => { wall(mats.kick, x0, z0, x1, z1, 1.4, 0.25); wall(mats.panel, x0, z0, x1, z1, AH - 1.4, 0.12, 1.4, false); };
-  hallWall(AX0, AZ0, AX1, AZ0); hallWall(AX0, AZ0, AX0, AZ1); hallWall(AX1, AZ0, AX1, AZ1);
-  hallWall(AX0, AZ1, -DOOR, AZ1); hallWall(DOOR, AZ1, AX1, AZ1);
-  box(mats.panel, DOOR * 2, AH - 3.2, 0.12, 0, 3.2 + (AH - 3.2) / 2, AZ1);
-  box(mats.woodDark, 2.6, 3.1, 0.08, -DOOR - 1.4, 1.55, AZ1 + 0.18);                                           // sliding door, open
-  for (let x = AX0; x <= AX1; x += 5) for (const z of [AZ0, AZ1]) box(mats.woodDark, 0.3, AH, 0.3, x, AH / 2, z);   // posts
-  for (let z = AZ0 + 5; z < AZ1; z += 5) for (const x of [AX0, AX1]) box(mats.woodDark, 0.3, AH, 0.3, x, AH / 2, z);
-  {
-    const ridge = 7.8, run = (AZ1 - AZ0) / 2 + 0.6, ang = Math.atan2(ridge - AH, run), len = Math.hypot(ridge - AH, run), cz = (AZ0 + AZ1) / 2;
-    const g = mergeGeometries([-1, 1].map(sz => { const b = new THREE.BoxGeometry(AX1 - AX0 + 1.0, 0.12, len); scaleUV(b, AX1 - AX0 + 1, 0.12, len, 1); b.rotateX(sz * ang); b.translate(0, (ridge + AH) / 2, cz + sz * run / 2); return b; }));
-    const roof = new THREE.Mesh(g, mats.roofHall); roof.castShadow = true; roof.receiveShadow = true; place(roof, 0, 0, 0);
-    roofs.push({ mesh: roof, region: toWorldBox(AX0, AX1, AZ0, AZ1) });
-    for (let x = AX0 + 5; x < AX1; x += 5) box(mats.woodDark, 0.2, 0.3, AZ1 - AZ0, x, AH, cz);                // roof beams
-    const gable = new THREE.BufferGeometry(); gable.setAttribute('position', new THREE.Float32BufferAttribute([0, AH, AZ0, 0, AH, AZ1, 0, ridge, cz], 3)); gable.computeVertexNormals();
-    for (const x of [AX0, AX1]) { const m = new THREE.Mesh(gable, new THREE.MeshStandardMaterial({ map: mats.panel.map, roughness: 0.85, side: THREE.DoubleSide })); m.castShadow = true; place(m, x, 0, 0); }
-    const sign = textBoard('Indoor arena', 2.8, 0.55); place(sign, 0, 3.75, AZ1 + 0.1);
-    interiors.push(toWorldBox(AX0 + 0.3, AX1 - 0.3, AZ0 + 0.3, AZ1 - 0.3));
-  }
-  // dressage letters around the kickboards
-  for (const [ch, x, z, ry] of [['A', AX0 + 0.14, -24, Math.PI / 2], ['C', AX1 - 0.14, -24, -Math.PI / 2], ['K', -14, AZ0 + 0.14, 0], ['E', 0, AZ0 + 0.14, 0], ['H', 14, AZ0 + 0.14, 0],
-    ['F', -14, AZ1 - 0.14, Math.PI], ['B', 6, AZ1 - 0.14, Math.PI], ['M', 14, AZ1 - 0.14, Math.PI]]) {
-    const b = textBoard(ch, 0.5, 0.5, '#f4f1e8', '#1c1c1c'); place(b, x, 1.0, z, ry);
-    (PLACES.arenaLetters ??= {})[ch] = { x: X0 + x, z: Z0 + z };
-  }
-
-  // ---- hay: loose piles in the yard, a round bale in a feeder, and a stack of small bales
-  const hayPile = (x, z, size) => {
-    const parts = [];
-    const mound = new THREE.SphereGeometry(0.6, 14, 8, 0, TAU, 0, Math.PI / 2).scale(1, 0.55, 0.85); parts.push(mound);
+  // hay a horse can eat (each pile is its own small mesh: it shrinks as it's eaten)
+  const hayPileGeo = (() => {
+    const parts = [new THREE.SphereGeometry(0.6, 14, 8, 0, TAU, 0, Math.PI / 2).scale(1, 0.55, 0.85)];
     for (let i = 0; i < 40; i++) {
       const c = new THREE.BoxGeometry(0.012, 0.012, rnd(0.25, 0.45));
       c.rotateY(Math.random() * TAU); c.rotateX((Math.random() - 0.5) * 0.6);
       const a = Math.random() * TAU, r = Math.random() * 0.55;
       c.translate(Math.cos(a) * r, 0.05 + Math.random() * 0.25 * (1 - r), Math.sin(a) * r * 0.85); parts.push(c);
     }
-    const m = new THREE.Mesh(mergeGeometries(parts), mats.hay);
-    m.castShadow = true; m.receiveShadow = true; m.scale.setScalar(size);
-    m.position.set(x - X0, 0.02, z - Z0); root.add(m);
-    return m;
-  };
-  for (const h of haySpots) { h.mesh = hayPile(h.x, h.z, h.size); h.y = Y0; h.amount = 1; }
-  for (const [x, z] of [[6, -9], [-8, -10.5], [24, 6]]) haySpots.push({ x: X0 + x, z: Z0 + z, y: Y0, reach: 1.0, low: true, size: 1, amount: 1, mesh: hayPile(X0 + x, Z0 + z, 1) });
-  {
-    // round bale in a metal ring feeder: horses eat from the side, head higher
-    const bx = 22, bz = -8;
-    const bale = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 1.2, 24), [mats.hay, mats.hay, mats.hay]); bale.rotation.x = 0; place(shadowed(bale), bx, 0.6, bz);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.04, 8, 32), mats.metalGrey); ring.rotation.x = Math.PI / 2; place(ring, bx, 0.9, bz);
-    const ring2 = ring.clone(); ring2.position.y = 0.35; root.add(ring2);
-    for (let i = 0; i < 10; i++) { const a = i / 10 * TAU; box(mats.metalGrey, 0.04, 0.6, 0.04, bx + Math.cos(a), 0.62, bz + Math.sin(a)); }
-    haySpots.push({ x: X0 + bx, z: Z0 + bz, y: Y0, reach: 1.15, low: false, size: 1, amount: 1, mesh: bale, bale: true });
-    colliders.push({ type: 'bale', x: X0 + bx, z: Z0 + bz, y: Y0, r: 0.95, h: Infinity });
+    return mergeGeometries(parts);
+  })();
+  function addHay(x, z, { reach = 1.0, low = true, size = 1, y = 0.02, ry = 0 } = {}) {
+    const m = new THREE.Mesh(hayPileGeo, mats.hay); m.castShadow = true; m.receiveShadow = true; m.scale.setScalar(size); m.position.set(x, y, z); m.rotation.y = ry; root.add(m);
+    const h = { x: X0 + x, z: Z0 + z, y: Y0, reach, low, size, amount: 1, mesh: m }; haySpots.push(h); return h;
   }
-  for (let i = 0; i < 12; i++) {
-    // stacked small bales against the barn's west end
-    const row = i % 4, level = Math.floor(i / 4);
-    box(mats.hay, 0.9, 0.42, 0.5, -16.2, 0.21 + level * 0.42, -4.5 + row * 0.52 + (level % 2) * 0.1, 0, 0.8);
-  }
-  walls.push(toWorldBox(-16.7, -15.7, -4.8, -2.3));
-  // water trough
-  box(mats.metalGrey, 2.0, 0.5, 0.6, 18, 0.25, 7.5); box(new THREE.MeshStandardMaterial({ color: 0x3e6a76, roughness: 0.1, metalness: 0.3 }), 1.9, 0.02, 0.5, 18, 0.46, 7.5);
-  walls.push(toWorldBox(16.9, 19.1, 7.1, 7.9));
 
-  // named places for the feature modules. Keys that are null don't exist in the yard yet.
+  // ---- hard-standing for the whole yard
+  const [rx0, rx1, rz0, rz1] = STABLE.rect;
+  floor(mats.gravel, rx0, rx1, rz0, rz1, 0.01, 3);
+
+  // ======== ÉCURIE: x -13..5, z 2..14, aisle along x (|z - 8| < 1.6) with a doorway at each end; sellerie and bureau at the west end
+  const EX0 = -13, EX1 = 5, EZ0 = 2, EZ1 = 14, EZC = 8, AZ = 1.6, ROOM_X = -8, WALL_H = 3.2, BOX_W = (EX1 - ROOM_X) / 3;
+  floor(mats.concrete, EX0, EX1, EZ0, EZ1, 0.025, 2);
+  floor(mats.concrete, EX1, EX1 + 3, EZC - 2.2, EZC + 2.2, 0.025, 2);                                       // apron at the east door
+  for (const [z, out] of [[EZ1, 1], [EZ0, -1]]) {
+    // long walls: timber over a stone plinth, an opening hatch in each box, a window in the room
+    const holes = [0, 1, 2].map(i => { const x = ROOM_X + (i + 0.5) * BOX_W + 1.0; return { a: x - 0.5, b: x + 0.5, y0: 1.5, y1: 2.4, out, shutters: false }; });
+    holes.push({ a: -11.2, b: -10.0, y0: 1.1, y1: 2.1, glass: true, out });
+    wallO(mats.clad, EX0, z, EX1, z, WALL_H, 0.2, holes);
+    box(mats.stone, EX1 - EX0 + 0.3, 0.55, 0.3, (EX0 + EX1) / 2, 0.275, z);
+    for (let i = 0; i < 3; i++) { const x = ROOM_X + (i + 0.5) * BOX_W + 1.0; box(mats.woodDark, 0.95, 0.9, 0.05, x + 1.0, 1.95, z + out * 0.13); }   // top doors folded open
+  }
+  for (const x of [EX0, EX1]) {
+    wallO(mats.clad, x, EZ0, x, EZ1, WALL_H, 0.2, [{ a: EZC - AZ, b: EZC + AZ, y0: 0, y1: 3.0 }]);
+    box(mats.woodDark, 0.25, 0.35, AZ * 2 + 0.6, x, 3.0, EZC);
+    for (const sz of [-1, 1]) box(mats.woodDark, 0.08, 2.9, 1.9, x + Math.sign(x + 4) * 0.18, 1.45, EZC + sz * (AZ + 1.15));   // sliding doors pushed open
+  }
+  // boxes: 3 a side. The five horses you can ride each have an open box with hay (in BREEDS order); the sixth is Caramel's, closed.
+  const RIDEABLE = { n0: 'Comet', n1: 'Onyx', n2: 'Pebble', s0: 'Biscuit', s1: 'Hazel' };
+  for (const side of [1, -1]) {
+    const tag = side > 0 ? 'n' : 's', zFront = EZC + side * AZ, zBack = EZC + side * 6;
+    for (let i = 1; i <= 2; i++) partition(ROOM_X + i * BOX_W, zFront, ROOM_X + i * BOX_W, zBack);
+    for (let i = 0; i < 3; i++) {
+      const xa = ROOM_X + i * BOX_W, xb = xa + BOX_W, cx = (xa + xb) / 2, cz = EZC + side * (AZ + 6) / 2, key = tag + i, name = RIDEABLE[key];
+      floor(mats.straw, xa + 0.05, xb - 0.05, Math.min(zFront, zBack) + 0.05, Math.max(zFront, zBack) - 0.05, 0.05, 1.2);
+      pcyl([0x2f6fb5, 0x3a8a4a, 0xb53a2f][i], 0.17, 0.14, 0.32, xb - 0.3, 0.2, zFront + side * 0.3, 14);       // water bucket
+      const plateRy = side > 0 ? Math.PI : 0, plateZ = zFront - side * 0.05;
+      if (name) {
+        partition(xa, zFront, cx - 0.8, zFront); partition(cx + 0.8, zFront, xb, zFront);
+        box(mats.woodDark, 1.5, 2.2, 0.06, cx - 1.6, 1.15, zFront - side * 0.1);                               // sliding door, open
+        board('plate:' + name, 0.6, 0.15, cx + 1.4, 1.05, plateZ, plateRy, false);
+        const hay = addHay(cx - 0.4, zBack - side * 0.7, { size: 0.75 });
+        const sx = X0 + cx + 0.2, sz = Z0 + cz - side * 0.5;
+        stallBoxes.push({ name, x: sx, z: sz, yaw: Math.atan2(hay.x - sx, hay.z - sz), hay });
+      } else {
+        partition(xa, zFront, xb, zFront);
+        board('plate:Caramel', 0.6, 0.15, cx, 1.05, plateZ, plateRy, false);
+      }
+    }
+  }
+  // sellerie (north) and bureau (south) at the west end, doors from the aisle
+  for (const side of [1, -1]) {
+    const zFront = EZC + side * AZ, zBack = EZC + side * 6;
+    wall(mats.render, ROOM_X, Math.min(zFront, zBack), ROOM_X, Math.max(zFront, zBack), WALL_H, 0.15);
+    const holes = [{ a: -12.4, b: -10.9, y0: 0, y1: 2.15 }];
+    if (side < 0) holes.push({ a: -10.3, b: -8.8, y0: 1.0, y1: 2.0, glass: true });
+    wallO(mats.render, EX0, zFront, ROOM_X, zFront, WALL_H, 0.15, holes);
+    box(mats.woodDark, 0.06, 2.1, 1.2, -12.4 + 0.05, 1.05, zFront + side * 0.65);                                 // door, swung open
+    floor(mats.wood, EX0 + 0.1, ROOM_X - 0.08, Math.min(zFront, zBack) + 0.08, Math.max(zFront, zBack) - 0.08, 0.05, 1.2);
+    board(side > 0 ? 'Sellerie' : 'Bureau', 1.3, 0.33, -11.65, 2.55, zFront - side * 0.11, side > 0 ? Math.PI : 0);
+  }
+  // sellerie: saddles on racks (east wall), bridles on hooks (west wall), a cleaning corner, a trunk and a bench
+  {
+    const LEATHER = 0x5a3620, saddleGeo = () => new THREE.SphereGeometry(0.26, 16, 8, 0, TAU, 0, Math.PI / 2).scale(1.35, 0.55, 0.85);
+    const saddle = (x, y, z) => {
+      paintGeo(saddleGeo().translate(x, y, z), LEATHER); pbox(0xf2efe6, 0.62, 0.03, 0.5, x, y - 0.01, z);
+      for (const s of [-1, 1]) { const f = new THREE.BoxGeometry(0.34, 0.36, 0.02); f.rotateX(s * 0.25); f.translate(x, y - 0.18, z + s * 0.2); paintGeo(f, LEATHER); }
+    };
+    for (const z of [10.6, 11.9, 13.2]) { box(mats.woodDark, 0.5, 0.08, 0.08, ROOM_X - 0.33, 1.15, z); saddle(ROOM_X - 0.45, 1.23, z); }
+    for (const z of [10.5, 11.4, 12.3, 13.2]) {
+      box(mats.metalGrey, 0.12, 0.04, 0.04, EX0 + 0.16, 1.85, z);
+      const loop = new THREE.TorusGeometry(0.17, 0.012, 6, 20).scale(1, 1.6, 1); loop.rotateY(Math.PI / 2); loop.translate(EX0 + 0.2, 1.6, z); paintGeo(loop, LEATHER);
+      const reins = new THREE.TorusGeometry(0.22, 0.01, 6, 20).scale(1, 1.8, 1); reins.rotateY(Math.PI / 2); reins.translate(EX0 + 0.22, 1.42, z + 0.03); paintGeo(reins, 0x3e2514);
+    }
+    // cleaning corner under the window: a saddle on a stand, bucket, sponge, saddle soap, a stool
+    box(mats.woodDark, 0.12, 0.8, 0.5, -10.6, 0.4, 12.9); box(mats.woodDark, 0.7, 0.08, 0.2, -10.6, 0.84, 12.9); saddle(-10.6, 0.96, 12.9);
+    pcyl(0x2f6fb5, 0.17, 0.14, 0.3, -9.7, 0.2, 13.3, 14); pcyl(0xd6e4ea, 0.15, 0.15, 0.01, -9.7, 0.33, 13.3, 14);
+    pbox(0x8a6a3a, 0.36, 0.45, 0.36, -9.2, 0.27, 12.5); pbox(0xf2d23a, 0.14, 0.06, 0.09, -9.25, 0.53, 12.45); pcyl(0xc8862f, 0.07, 0.07, 0.04, -9.1, 0.52, 12.6, 14);
+    pbox(0x6a4528, 0.9, 0.5, 0.5, -12.4, 0.25, 13.5); pbox(0x7b8086, 0.92, 0.04, 0.52, -12.4, 0.52, 13.5);                  // tack trunk
+    box(mats.wood, 1.5, 0.06, 0.38, -9.4, 0.45, 9.95); box(mats.woodDark, 0.06, 0.42, 0.34, -10.05, 0.22, 9.95); box(mats.woodDark, 0.06, 0.42, 0.34, -8.75, 0.22, 9.95);   // bench
+    [0x2f4f8a, 0x8a2f3a].forEach((c, i) => pbox(c, 0.9, 0.7, 0.05, -12.3 + i * 0.05, 1.25 - i * 0.03, 9.83 + i * 0.03));      // rugs over the rail by the door
+    box(mats.woodDark, 1.1, 0.05, 0.05, -12.3, 1.62, 9.8);
+    solid(-12.9, -11.9, 13.2, 13.9); solid(-11.0, -10.2, 12.6, 13.2);
+  }
+  // bureau: desk under the window with a computer, chair, filing cabinet, notice board, a plant
+  {
+    box(mats.wood, 1.5, 0.05, 0.7, -10.6, 0.76, 2.6); for (const dx of [-0.7, 0.7]) box(mats.woodDark, 0.05, 0.74, 0.65, -10.6 + dx, 0.37, 2.6);
+    pbox(0x111111, 0.55, 0.34, 0.03, -10.6, 1.05, 2.4); pbox(0x8fc3ff, 0.5, 0.3, 0.005, -10.6, 1.05, 2.418); pbox(0x23201d, 0.06, 0.12, 0.06, -10.6, 0.84, 2.38);
+    for (let i = 0; i < 3; i++) pbox(0xf6f4ee, 0.21, 0.01, 0.3, -11.1 + i * 0.05, 0.79 + i * 0.005, 2.75, 0.2 * i);
+    pcyl(0xd9542f, 0.04, 0.04, 0.09, -10.0, 0.83, 2.8);
+    pbox(0x23201d, 0.45, 0.05, 0.45, -10.6, 0.47, 3.4); pbox(0x23201d, 0.45, 0.5, 0.05, -10.6, 0.75, 3.62); pbox(0x7b8086, 0.05, 0.45, 0.05, -10.6, 0.23, 3.4);
+    pbox(0x7b8086, 0.6, 1.3, 0.5, -8.5, 0.65, 2.45); for (let i = 0; i < 3; i++) pbox(0x23201d, 0.2, 0.03, 0.02, -8.5, 0.3 + i * 0.4, 2.71);
+    board('notice', 1.4, 0.53, EX0 + 0.13, 1.6, 4.2, Math.PI / 2, false);
+    pcyl(0xa65a3a, 0.15, 0.12, 0.3, -8.5, 0.15, 5.9); psph(0x3f7a35, 0.28, -8.5, 0.5, 5.9);
+    solid(-11.4, -9.8, 2.2, 3.0); solid(-8.85, -8.15, 2.15, 2.75);
+  }
+  pitched(roofMaps.slate, EX0, EX1, EZ0, EZ1, WALL_H, 6.0, { gable: mats.clad });
+  board('Écurie', 2.2, 0.55, EX1 + 0.14, 3.9, EZC, Math.PI / 2);
+  interiors.push({ ...toWorldBox(EX0 + 0.2, EX1 - 0.2, EZ0 + 0.2, EZ1 - 0.2), overWalls: 3.6 });   // look over the box walls
+
+  // ---- grooming bay along the écurie's south wall: tie rings, a grooming box, a wash-down spot with a hose
+  const GROOM = [{ x: -11.9, z: 0.35, yaw: 0 }, { x: -9.2, z: 0.35, yaw: 0 }, { x: -6.3, z: 0.35, yaw: 0, wash: true }];
+  floor(mats.concrete, -13.2, -4.6, -1.0, EZ0, 0.03, 2);
+  for (const s of GROOM) { const r = new THREE.TorusGeometry(0.07, 0.014, 6, 14); r.translate(s.x, 1.45, EZ0 - 0.13); push(mats.metalGrey, r); box(mats.metalGrey, 0.06, 0.06, 0.05, s.x, 1.53, EZ0 - 0.12); }
+  pbox(0xb83a2f, 0.5, 0.26, 0.3, -10.55, 0.16, 1.55); for (let i = 0; i < 3; i++) pbox([0x5a3a20, 0x222222, 0xd8c28a][i], 0.06, 0.12, 0.2, -10.7 + i * 0.12, 0.33, 1.55);
+  pcyl(0x2f7a3e, 0.22, 0.22, 0.12, -5.0, 1.3, EZ0 - 0.18, 16, Math.PI / 2); pbox(0x1f1f1f, 0.6, 0.012, 0.6, -6.3, 0.04, 0.6);
+  // the yard's water trough by the écurie's east door
+  box(mats.metalGrey, 0.6, 0.55, 2.0, EX1 + 0.45, 0.275, 3.7); box(mats.water, 0.5, 0.02, 1.9, EX1 + 0.45, 0.5, 3.7);
+  solid(EX1 + 0.1, EX1 + 0.8, 2.65, 4.75);
+
+  // ======== HANGAR À FOIN (open steel shed) with the feed room: x -28..-16, z 2..14
+  const HX0 = -28, HX1 = -16, HZ0 = 2, HZ1 = 14, HE = 5.0;
+  floor(mats.concrete, HX0, HX1, HZ0, HZ1, 0.025, 2);
+  wall(mats.clad, HX0, HZ1, HX1, HZ1, HE, 0.15); wall(mats.clad, HX0, HZ0, HX0, HZ1, HE, 0.15);
+  for (const x of [HX0, -24, -20, HX1]) for (const z of [HZ0, HZ1]) { box(mats.steel, 0.25, HE, 0.25, x, HE / 2, z); if (z === HZ0) solid(x - 0.15, x + 0.15, z - 0.15, z + 0.15); }
+  box(mats.steel, HX1 - HX0, 0.3, 0.2, (HX0 + HX1) / 2, HE - 0.15, HZ0);
+  pitched(roofMaps.green, HX0, HX1, HZ0, HZ1, HE, 6.8, { ox: 0.3, oS: 0.8, oN: 0.3, gable: mats.clad, gt: 0.15 });
+  // round bales stacked at the back, small bales along the west wall
+  { const bale = (x, y, z) => { const g = new THREE.CylinderGeometry(0.75, 0.75, 1.2, 20); g.rotateZ(Math.PI / 2); g.translate(x, y, z); push(mats.hay, g); };
+    for (const z of [13.1, 11.55]) { for (let i = 0; i < 4; i++) bale(-27.2 + i * 1.3, 0.75, z); for (let i = 0; i < 3; i++) bale(-26.55 + i * 1.3, 2.05, z); }
+    solid(-27.9, -22.6, 10.75, 13.9);
+    for (let i = 0; i < 15; i++) { const row = i % 5, level = Math.floor(i / 5); box(mats.hay, 0.9, 0.42, 0.5, -27.4, 0.21 + level * 0.42, 2.6 + row * 0.52 + (level % 2) * 0.1, 0, 0.8); }
+    solid(-27.9, -26.9, 2.3, 5.4); }
+  // feed room: block walls in the north-east corner, feed bins of granulés
+  const FRX = -20, FRZ = 9;
+  wallO(mats.render, FRX, FRZ, HX1, FRZ, 2.6, 0.15, [{ a: -18.9, b: -17.3, y0: 0, y1: 2.15 }]);
+  wall(mats.render, FRX, FRZ, FRX, HZ1, 2.6, 0.15); wall(mats.render, HX1, FRZ, HX1, HZ1, 2.6, 0.15);
+  box(mats.woodDark, 0.06, 2.1, 1.5, -17.35, 1.05, FRZ + 0.8);
+  board('Aliments', 1.3, 0.33, -18.1, 2.4, FRZ - 0.11, Math.PI);
+  [[0x3a7a4a, 0x2d6b3c], [0x2f5f9a, 0x24507f], [0xd8a62a, 0xb88a1e]].forEach(([c, lid], i) => { const x = -19.35 + i * 1.0; pbox(c, 0.8, 0.8, 0.75, x, 0.4, 13.4); pbox(lid, 0.84, 0.06, 0.8, x, 0.83, 13.4); });
+  pbox(0x7b8086, 0.22, 0.1, 0.12, -18.35, 0.9, 13.2);
+  for (let i = 0; i < 4; i++) pbox(0xe8e0c8, 0.55, 0.16, 0.85, -16.6, 0.08 + i * 0.16, 10.6, (i % 2) * 0.15);   // sacks
+  solid(-19.8, -16.1, 12.95, 13.9); solid(-16.95, -16.1, 10.1, 11.1);
+  interiors.push(toWorldBox(FRX + 0.12, HX1 - 0.12, FRZ + 0.12, HZ1 - 0.12));
+  // tractor parked in the hangar
+  { const x = -24.3, R = 0xb8322a, T = 0x1c1c1c;
+    pbox(R, 0.9, 0.75, 1.7, x, 1.0, 4.1); pbox(R, 1.1, 0.5, 1.2, x, 0.95, 5.6); pbox(0x2a2a2a, 0.5, 0.06, 0.4, x, 1.35, 5.9);
+    for (const s of [-1, 1]) { pcyl(T, 0.68, 0.68, 0.42, x + s * 0.82, 0.68, 5.8, 18, 0, Math.PI / 2); pcyl(0xc9b23a, 0.3, 0.3, 0.44, x + s * 0.82, 0.68, 5.8, 12, 0, Math.PI / 2);
+      pcyl(T, 0.4, 0.4, 0.3, x + s * 0.62, 0.4, 3.6, 16, 0, Math.PI / 2); pbox(0x333333, 0.05, 1.3, 0.05, x + s * 0.5, 1.85, 6.3); pbox(0x333333, 0.05, 1.3, 0.05, x + s * 0.5, 1.85, 5.1); }
+    pbox(R, 1.15, 0.06, 1.4, x, 2.52, 5.7); pcyl(0x333333, 0.04, 0.04, 0.9, x + 0.3, 1.75, 3.6); pbox(0xeeeeee, 0.6, 0.15, 0.04, x, 1.1, 3.24);
+    solid(x - 1.1, x + 1.1, 3.2, 6.5); }
+
+  // ======== MUCK HEAP (fumière) in its concrete bunker, with a wheelbarrow; hens about the yard
+  box(mats.concrete, 0.25, 1.2, 6, -27.85, 0.6, -3.5); box(mats.concrete, 4.6, 1.2, 0.25, -25.6, 0.6, -0.6); box(mats.concrete, 4.6, 1.2, 0.25, -25.6, 0.6, -6.4);
+  { const g = new THREE.SphereGeometry(1, 16, 8, 0, TAU, 0, Math.PI / 2).scale(2.0, 1.15, 2.5); g.translate(-25.6, 0, -3.5); push(mats.muck, g); }
+  solid(-28, -23.3, -6.55, -0.45);
+  { const x = -22.4, z = -3.0; pbox(0x2f7a3e, 0.62, 0.32, 0.85, x, 0.55, z); pcyl(0x1c1c1c, 0.2, 0.2, 0.08, x, 0.2, z - 0.55, 14, 0, Math.PI / 2);
+    for (const s of [-1, 1]) { pbox(0x7b8086, 0.04, 0.04, 1.3, x + s * 0.25, 0.45, z + 0.3); pbox(0x7b8086, 0.04, 0.35, 0.04, x + s * 0.22, 0.2, z + 0.25); }
+    pbox(0x7b8086, 0.03, 1.4, 0.03, -23.15, 0.7, -1.2, 0); }
+  for (const [x, z, ry, c] of [[-21.0, -4.6, 0.4, 0xf4efe4], [-20.1, -5.6, 2.1, 0x9c5a2c], [-19.3, -3.7, -1.0, 0x9c5a2c], [-22.3, -6.6, 1.2, 0xf4efe4], [6.5, -3.0, 2.6, 0x9c5a2c]]) {
+    const fx = Math.sin(ry), fz = Math.cos(ry);
+    psph(c, 0.15, x, 0.22, z, 1, 0.9, 1.35, 8); psph(c, 0.08, x + fx * 0.17, 0.38, z + fz * 0.17, 1, 1, 1, 8);
+    pbox(0xd23a2a, 0.02, 0.06, 0.06, x + fx * 0.17, 0.47, z + fz * 0.17, ry); pbox(0xe8b030, 0.03, 0.03, 0.06, x + fx * 0.26, 0.38, z + fz * 0.26, ry);
+    pcyl(0xe8b030, 0.012, 0.012, 0.1, x, 0.05, z);
+  }
+
+  // ======== LONGÈRE (stone farmhouse, slate roof, blue-grey shutters): x -28..-12, z -16..-8. East part = the club house.
+  const FX0 = -28, FX1 = -12, FZ0 = -16, FZ1 = -8, FE = 2.9, FR = 6.4, CL_X = -21;
+  wallO(mats.render, FX0, FZ1, FX1, FZ1, FE, 0.4, [{ a: -19.6, b: -18.4, y0: 0.9, y1: 2.1, glass: true, out: 1 }, { a: -14.6, b: -13.0, y0: 0, y1: 2.2, out: 1, shutters: false }]);
+  wallO(mats.render, FX1, FZ0, FX1, FZ1, FE, 0.4, [{ a: -13.6, b: -12.4, y0: 0.9, y1: 2.1, glass: true, out: 1 }]);
+  wall(mats.render, FX0, FZ0, FX0, FZ1, FE, 0.4); wall(mats.render, CL_X, FZ0, CL_X, FZ1, FE, 0.2);
+  // the south wall is shared with the manège: a big window lets the club house watch the lesson
+  wallO(mats.render, FX0, FZ0, FX1, FZ0, FE, 0.25, [{ a: -17.2, b: -12.8, y0: 1.2, y1: 2.6, glass: true }]);
+  for (const [x, w] of [[-26.6, 1.1], [-22.6, 1.1]]) winDeco(true, FZ1 + 0.23, 1, x - w / 2, x + w / 2, 0.9, 2.1, true, true);   // the family's windows
+  winDeco(false, FX0 - 0.23, -1, -12.6, -11.4, 0.9, 2.1, true, true);
+  pbox(SHUTTER, 1.0, 2.1, 0.06, -24.6, 1.05, FZ1 + 0.21); winDeco(true, FZ1 + 0.23, 1, -25.1, -24.1, 0, 2.1, false);              // their front door, closed
+  box(mats.woodDark, 0.06, 2.15, 1.5, -14.6 + 0.05, 1.08, FZ1 - 0.95);                                                         // club house door, open
+  { const parts = [slab(FX0, FX1, (FZ0 + FZ1) / 2, FR, FZ0, FE, 0, 0, 0.35), slab(FX0, FX1, (FZ0 + FZ1) / 2, FR, FZ1, FE, 0, 0.45, 0.35)];
+    roofMesh(roofMaps.slate, parts, toWorldBox(FX0, FX1, FZ0, FZ1));
+    for (const x of [FX0, FX1]) prismX(mats.render, x, 0.4, [[FZ0, FE], [FZ1, FE], [(FZ0 + FZ1) / 2, FR]]);
+    for (const x of [FX0 + 0.5, CL_X]) box(mats.stone, 0.7, 1.7, 0.9, x, FR + 0.2, (FZ0 + FZ1) / 2); }
+  board('Club house', 1.5, 0.38, -13.8, 2.42, FZ1 + 0.25, 0);
+  interiors.push(toWorldBox(CL_X + 0.15, FX1 - 0.25, FZ0 + 0.2, FZ1 - 0.25));
+  // inside the club house: tiled floor, a long table at the window (where you sit), a round table, posters, the hot-chocolate corner
+  floor(mats.tiles, CL_X + 0.1, FX1 - 0.2, FZ0 + 0.13, FZ1 - 0.2, 0.03, 1);
+  const SEAT = { x: -15.0, z: -13.75, yaw: Math.PI };
+  { box(mats.wood, 3.6, 0.06, 0.85, -15.0, 0.75, -14.55); for (const dx of [-1.6, 1.6]) box(mats.woodDark, 0.08, 0.72, 0.7, -15.0 + dx, 0.36, -14.55);
+    box(mats.wood, 3.4, 0.06, 0.34, -15.0, 0.45, -13.75); for (const dx of [-1.5, 0, 1.5]) box(mats.woodDark, 0.06, 0.42, 0.3, -15.0 + dx, 0.21, -13.75);
+    solid(-16.8, -13.2, -14.98, -14.12);
+    const chair = (x, z, ry, c) => { const fx = Math.sin(ry), fz = Math.cos(ry); pbox(c, 0.42, 0.05, 0.42, x, 0.45, z, ry); pbox(c, 0.42, 0.45, 0.05, x - fx * 0.19, 0.7, z - fz * 0.19, ry);
+      for (const [a, b] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) pbox(0x4a3828, 0.04, 0.44, 0.04, x + a * 0.17, 0.22, z + b * 0.17); };
+    const T = { x: -18.6, z: -10.8 };
+    pcyl(0x8a6240, 0.6, 0.6, 0.05, T.x, 0.74, T.z, 20); pcyl(0x4a3828, 0.06, 0.06, 0.72, T.x, 0.36, T.z); pcyl(0x4a3828, 0.3, 0.3, 0.04, T.x, 0.02, T.z, 16);
+    [[0, 0xc0392b], [Math.PI / 2, 0x2f6fb5], [Math.PI, 0x3a8a4a], [-Math.PI / 2, 0xe0a82a]].forEach(([a, c]) => chair(T.x - Math.sin(a) * 0.75, T.z - Math.cos(a) * 0.75, a, c));
+    solid(T.x - 0.55, T.x + 0.55, T.z - 0.55, T.z + 0.55);
+    // posters on the partition wall, menu over the counter, rosettes on the north wall
+    board('anatomy', 2.2, 0.96, CL_X + 0.115, 1.7, -13.2, Math.PI / 2, false);
+    board('robes', 1.1, 0.83, CL_X + 0.115, 1.65, -10.2, Math.PI / 2, false);
+    // hot-chocolate corner: counter, a big pot, mugs, a plate of biscuits
+    box(mats.wood, 0.65, 0.92, 2.2, FX1 - 0.55, 0.46, -10.3); box(mats.woodDark, 0.72, 0.05, 2.3, FX1 - 0.56, 0.945, -10.3);
+    pcyl(0xa8402a, 0.15, 0.15, 0.3, FX1 - 0.55, 1.12, -11.0, 16); pcyl(0x222222, 0.16, 0.16, 0.03, FX1 - 0.55, 1.285, -11.0, 16);
+    [0xf2efe6, 0xc0392b, 0x2f6fb5, 0xe0a82a, 0x3a8a4a].forEach((c, i) => pcyl(c, 0.045, 0.04, 0.1, FX1 - 0.7 + (i % 2) * 0.2, 1.02, -10.55 + i * 0.2, 10));
+    pcyl(0xf2efe6, 0.14, 0.14, 0.015, FX1 - 0.55, 0.98, -9.55, 16); for (let i = 0; i < 5; i++) pcyl(0xc78a43, 0.04, 0.04, 0.015, FX1 - 0.55 + Math.cos(i * 1.3) * 0.07, 0.995, -9.55 + Math.sin(i * 1.3) * 0.07, 8);
+    board('choc', 1.3, 0.49, FX1 - 0.215, 1.8, -10.3, -Math.PI / 2, false);
+    solid(FX1 - 0.95, FX1, -11.45, -9.15);
+    box(mats.woodDark, 1.6, 0.04, 0.22, -17.0, 1.85, FZ1 - 0.32);
+    [0x2a62c9, 0xc0392b, 0xe0c03a, 0x3a8a4a].forEach((c, i) => { pcyl(c, 0.09, 0.09, 0.01, -17.6 + i * 0.4, 1.55, FZ1 - 0.21, 14, Math.PI / 2); pbox(c, 0.06, 0.2, 0.005, -17.6 + i * 0.4, 1.4, FZ1 - 0.205); });
+    pcyl(0xd9b44a, 0.06, 0.04, 0.16, -16.6, 1.95, FZ1 - 0.32, 12); pcyl(0xd9b44a, 0.09, 0.09, 0.02, -16.6, 1.88, FZ1 - 0.32, 12);
+  }
+  // outside the club house: a bench and flower tubs
+  { box(mats.wood, 1.5, 0.06, 0.38, -17.0, 0.45, FZ1 + 0.45); for (const dx of [-0.65, 0.65]) box(mats.woodDark, 0.06, 0.42, 0.34, -17.0 + dx, 0.22, FZ1 + 0.45); }
+  const flowerTub = (x, z) => {
+    pcyl(0x7a5232, 0.38, 0.32, 0.45, x, 0.225, z, 14); pcyl(0x3b2a1a, 0.34, 0.34, 0.02, x, 0.44, z, 14); psph(0x3f7a35, 0.3, x, 0.55, z, 1, 0.6, 1, 8);
+    for (let i = 0; i < 7; i++) { const a = i * 0.9 + x, r = 0.12 + (i % 3) * 0.07; psph([0xd8343a, 0xf0c838, 0xe878b8, 0xf6f2ea][i % 4], 0.06, x + Math.cos(a) * r, 0.66 + (i % 2) * 0.05, z + Math.sin(a) * r, 1, 1, 1, 6); }
+  };
+  flowerTub(-15.3, FZ1 + 0.55); flowerTub(-12.4, FZ1 + 0.55); flowerTub(-20.2, FZ1 + 0.55);
+
+  // ======== MANÈGE couvert, 42 × 20 m inside: x -24..18, z -36..-16. Kickboards, open boarding above, timber cladding, steel roof.
+  const AX0 = -24, AX1 = 18, AZ0 = -36, AZ1 = -16, AH = 5.0, KH = 1.5, SH = 2.9, D0 = 13.4, D1 = 16.6;
+  floor(mats.sand, AX0, AX1, AZ0, AZ1, 0.03, 2.5);
+  const mWall = (x0, z0, x1, z1) => { wall(mats.kick, x0, z0, x1, z1, KH, 0.25); wall(mats.slats, x0, z0, x1, z1, SH - KH, 0.06, KH, false); };
+  mWall(AX0, AZ0, AX1, AZ0); mWall(AX0, AZ0, AX0, AZ1); mWall(AX1, AZ0, AX1, AZ1); mWall(FX1, AZ1, D0, AZ1); mWall(D1, AZ1, AX1, AZ1);
+  for (const [x0, z0, x1, z1] of [[AX0, AZ0, AX1, AZ0], [AX0, AZ0, AX0, AZ1], [AX1, AZ0, AX1, AZ1], [AX0, AZ1, AX1, AZ1]]) wall(mats.clad, x0, z0, x1, z1, AH - SH, 0.12, SH, false);
+  // kickboard lining on the arena side of the farmhouse wall (lower under the window)
+  for (const [a, b, h] of [[AX0, -17.2, KH], [-17.2, -12.8, 1.2], [-12.8, FX1, KH]]) box(mats.kick, b - a, h, 0.06, (a + b) / 2, h / 2, AZ1 - 0.155);
+  box(mats.woodDark, 3.4, 2.85, 0.08, D0 - 1.75, 1.43, AZ1 + 0.22);                                              // sliding door, open
+  for (let x = AX0; x <= AX1; x += 6) { box(mats.steel, 0.3, AH, 0.3, x, AH / 2, AZ0 - 0.28); if (x > FX1) box(mats.steel, 0.3, AH, 0.3, x, AH / 2, AZ1 + 0.28); }
+  for (const z of [AZ0 + 20 / 3, AZ0 + 40 / 3, AZ1]) for (const x of [AX0 - 0.28, AX1 + 0.28]) box(mats.steel, 0.3, AH, 0.3, x, AH / 2, z);
+  pitched(roofMaps.grey, AX0, AX1, AZ0, AZ1, AH, 8.6, { gable: mats.clad, gt: 0.12 });
+  for (let x = AX0 + 6; x < AX1; x += 6) box(mats.steel, 0.2, 0.35, AZ1 - AZ0, x, AH, (AZ0 + AZ1) / 2);                 // roof trusses
+  board('Manège', 2.4, 0.6, (D0 + D1) / 2, 3.7, AZ1 + 0.14, 0);
+  interiors.push(toWorldBox(AX0 + 0.3, AX1 - 0.3, AZ0 + 0.3, AZ1 - 0.3));
+  // dressage letters, big black-on-white boards above the kickboards: A and C at the short ends, K-E-H on the left as you ride in at A,
+  // F-B-M on the right; E and B at the middle of the long sides, K, H, F, M 6 m from the corners
+  const EMID = (AX0 + AX1) / 2, ZMID = (AZ0 + AZ1) / 2, LET = [['A', AX0, ZMID, Math.PI / 2], ['C', AX1, ZMID, -Math.PI / 2],
+    ['K', AX0 + 6, AZ0, 0], ['E', EMID, AZ0, 0], ['H', AX1 - 6, AZ0, 0], ['F', AX0 + 6, AZ1, Math.PI], ['B', EMID, AZ1, Math.PI], ['M', AX1 - 6, AZ1, Math.PI]];
+  PLACES.arenaLetters = {};
+  for (const [ch, x, z, ry] of LET) {
+    const nx = Math.sin(ry), nz = Math.cos(ry);
+    board(ch, 1.3, 1.3, x + nx * 0.17, 2.2, z + nz * 0.17, ry);
+    PLACES.arenaLetters[ch] = { x: X0 + x + nx * 0.14, z: Z0 + z + nz * 0.14 };
+  }
+  // a mounting block by the door
+  box(mats.stone, 0.9, 0.3, 0.8, 11.3, 0.15, AZ1 + 0.9); box(mats.stone, 0.9, 0.3, 0.45, 11.3, 0.45, AZ1 + 0.72); solid(10.85, 11.75, AZ1 + 0.5, AZ1 + 1.3);
+
+  // ======== ROUND PEN (rond d'Havrincourt), 14 m across, east of the manège, gateway to the north
+  const RP = { x: 27, z: -27.5, r: 7 }, RPN = 28, RPH = 1.6;
+  { const g = new THREE.CircleGeometry(RP.r, 40).rotateX(-Math.PI / 2), uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 5.6, uv.getY(i) * 5.6);
+    g.translate(RP.x, 0.025, RP.z); push(mats.sand, g, true);
+    const P = (k) => [RP.x + Math.sin(k * TAU / RPN) * RP.r, RP.z + Math.cos(k * TAU / RPN) * RP.r];
+    for (let k = 1; k < RPN - 1; k++) { const [ax, az] = P(k), [bx, bz] = P(k + 1); beam(mats.kick, ax, RPH / 2, az, bx, RPH / 2, bz, 0.07, RPH); lineWalls(ax, az, bx, bz, 0.1, 0.8); }
+    for (let k = 1; k < RPN; k++) { const [x, z] = P(k); box(mats.woodDark, 0.15, RPH + 0.25, 0.15, x, (RPH + 0.25) / 2, z, 0, 1); } }
+
+  // ======== STABULATION LIBRE for the ponies: open-fronted shed (x 14..28, z 6..14) opening north onto its own paddock (z 14..34)
+  const SX0 = 14, SX1 = 28, SZ0 = 6, SZ1 = 14, SB = 2.8, SF = 4.0, PDZ = 34, GZ0 = 17, GZ1 = 20.2;
+  floor(mats.straw, SX0 + 0.1, SX1 - 0.1, SZ0 + 0.1, SZ1, 0.07, 1.4);
+  for (const [x, z, s] of [[16, 12.5, 1.6], [24.5, 11.5, 2.0], [26.5, 8, 1.4], [20, 10, 1.2]]) { const g = new THREE.SphereGeometry(0.6, 12, 6, 0, TAU, 0, Math.PI / 2).scale(s, 0.25, s * 0.8); g.translate(x, 0.05, z); push(mats.straw, g); }
+  wall(mats.render, SX0, SZ0, SX1, SZ0, 1.2, 0.2); wall(mats.clad, SX0, SZ0, SX1, SZ0, SB - 1.2, 0.16, 1.2, false);
+  for (const x of [SX0, SX1]) { prismX(mats.clad, x, 0.16, [[SZ0, 0], [SZ1, 0], [SZ1, SF], [SZ0, SB]]); solid(x - 0.13, x + 0.13, SZ0, SZ1); }
+  for (const x of [SX0, (SX0 + SX1) / 2, SX1]) box(mats.woodDark, 0.22, SF, 0.22, x, SF / 2, SZ1 - 0.11);
+  solid(20.85, 21.15, SZ1 - 0.25, SZ1 + 0.05);
+  roofMesh(roofMaps.green, [slab(SX0, SX1, SZ0, SB, SZ1, SF, 0.45, 0.6, 0.35)], toWorldBox(SX0, SX1, SZ0, SZ1));
+  board('Stabulation', 2.4, 0.6, (SX0 + SX1) / 2, 2.0, SZ0 - 0.15, Math.PI);
+  interiors.push(toWorldBox(SX0 + 0.15, SX1 - 0.15, SZ0 + 0.15, SZ1));
+  // hay rack (râtelier) along the back wall, and a water trough at the east end
+  box(mats.wood, 7.2, 0.5, 0.65, 19, 0.75, SZ0 + 0.45); box(mats.woodDark, 7.2, 0.06, 0.06, 19, 1.7, SZ0 + 0.75);
+  for (let x = 15.5; x <= 22.5; x += 0.35) box(mats.woodDark, 0.04, 0.7, 0.04, x, 1.35, SZ0 + 0.72);
+  solid(15.3, 22.7, SZ0, SZ0 + 0.85);
+  const rackHay = [addHay(17.2, SZ0 + 0.45, { reach: 1.4, low: false, size: 1.05, y: 0.98 }), addHay(20.8, SZ0 + 0.45, { reach: 1.4, low: false, size: 1.05, y: 0.98 })];
+  box(mats.metalGrey, 0.6, 0.6, 1.8, SX1 - 0.45, 0.3, 11.2); box(mats.water, 0.5, 0.02, 1.7, SX1 - 0.45, 0.55, 11.2); solid(SX1 - 0.8, SX1, 10.25, 12.15);
+  // the paddock: post-and-rail fence following the ground, a gateway on the track side, a round bale in a ring feeder
+  fenceRun(SX0, SZ1, SX0, GZ0); fenceRun(SX0, GZ1, SX0, PDZ); fenceRun(SX0, PDZ, SX1, PDZ); fenceRun(SX1, PDZ, SX1, SZ1);
+  { const y = gy(SX0, GZ1); for (let i = 0; i < 5; i++) beam(mats.metalGrey, SX0 + 0.18, y + 0.3 + i * 0.22, GZ1 + 0.1, SX0 + 0.18, y + 0.3 + i * 0.22, GZ1 + 3.1, 0.04, 0.05);
+    for (const z of [GZ1 + 0.1, GZ1 + 3.1]) box(mats.metalGrey, 0.05, 1.0, 0.05, SX0 + 0.18, y + 0.75, z); }
+  {
+    const bx = 22.5, bz = 27.5, y = gy(bx, bz);
+    const bale = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 1.2, 24), mats.hay); bale.position.set(bx, y + 0.6, bz); bale.castShadow = bale.receiveShadow = true; root.add(bale);
+    for (const h of [0.35, 0.9]) { const r = new THREE.TorusGeometry(1.0, 0.04, 8, 32); r.rotateX(Math.PI / 2); r.translate(bx, y + h, bz); push(mats.metalGrey, r); }
+    for (let i = 0; i < 10; i++) { const a = i / 10 * TAU; box(mats.metalGrey, 0.04, 0.6, 0.04, bx + Math.cos(a), y + 0.62, bz + Math.sin(a)); }
+    haySpots.push({ x: X0 + bx, z: Z0 + bz, y: Y0 + y, reach: 1.15, low: false, size: 1, amount: 1, mesh: bale, bale: true });
+    colliders.push({ type: 'bale', x: X0 + bx, z: Z0 + bz, y: Y0 + y, r: 0.95, h: Infinity });
+  }
+  const STAB_SPOTS = [[16.5, 8.1, Math.PI], [19, 8.1, Math.PI], [21.5, 8.1, Math.PI], [18, 21.5, 0.4], [24.8, 24.5, -2.4], [19.5, 30.5, 1.3]];
+
+  // ======== ENTRANCE: the farm sign on an arch over the drive (east side), white fence wings, flowers
+  { const x = rx1, zA = -11.5, zB = -2.5, zc = (zA + zB) / 2;
+    for (const z of [zA, zB]) { box(mats.woodDark, 0.32, 4.6, 0.32, x, 2.3, z, 0, 1); solid(x - 0.2, x + 0.2, z - 0.2, z + 0.2); flowerTub(x - 0.75, z + (z < zc ? -0.6 : 0.6)); }
+    box(mats.woodDark, 0.3, 0.3, zB - zA + 1.0, x, 4.45, zc, 0, 1);
+    for (const dz of [-2.3, 2.3]) box(mats.metalGrey, 0.03, 0.45, 0.03, x, 4.08, zc + dz);
+    box(mats.woodDark, 0.05, 1.02, 5.1, x, 3.35, zc, 0, 1);
+    board('farm', 5.0, 0.94, x + 0.03, 3.35, zc, Math.PI / 2, false); board('farm', 5.0, 0.94, x - 0.03, 3.35, zc, -Math.PI / 2, false);
+    fenceRun(x, -19, x, zA - 0.4, { rail: mats.white, post: mats.white, rails: [0.5, 1.0], postH: 1.2 }); fenceRun(x, zB + 0.4, x, 5, { rail: mats.white, post: mats.white, rails: [0.5, 1.0], postH: 1.2 }); }
+
+  // ======== LE PRÉ: the meadow where the herd grazes, fenced all round, gateway facing the yard, field shelter and trough
+  const [PA0, PA1, GX, GZ] = (() => { const p = STABLE.path; return [p[0], p[1], p[2], p[3]]; })();
+  const PX = MEADOW.x - X0, PZ = MEADOW.z - Z0, PR = MEADOW.r;
+  const gateA = Math.atan2(PA0 - PX, PA1 - PZ), gHalf = 1.9 / PR, NP = 64;
+  const gate = { x: PX + Math.sin(gateA) * PR, z: PZ + Math.cos(gateA) * PR, yaw: Math.atan2(-Math.sin(gateA), -Math.cos(gateA)) };
+  {
+    let prev = null;
+    for (let k = 0; k <= NP; k++) {
+      const a = gateA + gHalf + k * (TAU - 2 * gHalf) / NP, x = PX + Math.sin(a) * PR, z = PZ + Math.cos(a) * PR, y = gy(x, z), big = k === 0 || k === NP;
+      box(mats.woodDark, big ? 0.22 : 0.14, big ? 1.8 : 1.6, big ? 0.22 : 0.14, x, y + (big ? 0.8 : 0.7), z, 0, 1);
+      if (prev) { for (const r of [0.55, 1.1]) beam(mats.wood, prev.x, prev.y + r, prev.z, x, y + r, z, 0.05, 0.13); lineWalls(prev.x, prev.z, x, z, 0.1, 0.8); }
+      prev = { x, y, z };
+    }
+    // the gate, swung open inside along the fence
+    const a0 = gateA + gHalf, a1 = a0 + 3.4 / PR, r = PR - 0.25, y = gy(PX + Math.sin(a0) * PR, PZ + Math.cos(a0) * PR);
+    for (let i = 0; i < 5; i++) beam(mats.metalGrey, PX + Math.sin(a0) * r, y + 0.3 + i * 0.22, PZ + Math.cos(a0) * r, PX + Math.sin(a1) * r, y + 0.3 + i * 0.22, PZ + Math.cos(a1) * r, 0.04, 0.05);
+    // a signpost just outside, beside the gateway, facing the track
+    const ox = Math.sin(gateA), oz = Math.cos(gateA), sx = gate.x + ox * 0.7 + oz * 2.6, sz = gate.z + oz * 0.7 - ox * 2.6, sy = gy(sx, sz);
+    box(mats.woodDark, 0.12, 2.1, 0.12, sx, sy + 1.05, sz, 0, 1); board('Le pré', 1.4, 0.35, sx + ox * 0.09, sy + 1.8, sz + oz * 0.09, gateA);
+  }
+  // field shelter on the far (north) side, open to the south
+  const SH0 = { x: PX + 1, z: PZ + 20.5 }, shy = gy(SH0.x, SH0.z);
+  {
+    const x0 = SH0.x - 3, x1 = SH0.x + 3, zf = SH0.z - 1.3, zb = SH0.z + 1.3;
+    wall(mats.clad, x0, zb, x1, zb, 2.3, 0.15, shy);
+    for (const x of [x0, x1]) { prismX(mats.clad, x, 0.15, [[zf, 0], [zb, 0], [zb, 2.3], [zf, 3.0]], shy); solid(x - 0.12, x + 0.12, zf, zb); }
+    roofMesh(roofMaps.green, [slab(x0, x1, zb, shy + 2.3, zf, shy + 3.0, 0.3, 0.5, 0.3)], toWorldBox(x0, x1, zf, zb));
+    floor(mats.straw, x0 + 0.1, x1 - 0.1, zf + 0.2, zb - 0.1, shy + 0.04, 1.4);
+  }
+  const PT = { x: PX + Math.sin(gateA + 0.5) * 19, z: PZ + Math.cos(gateA + 0.5) * 19 }, pty = gy(PT.x, PT.z);
+  box(mats.metalGrey, 2.0, 0.55, 0.6, PT.x, pty + 0.275, PT.z); box(mats.water, 1.9, 0.02, 0.5, PT.x, pty + 0.5, PT.z); solid(PT.x - 1.05, PT.x + 1.05, PT.z - 0.35, PT.z + 0.35);
+  // the track from the yard to the pré gate (worn earth, the grass is thinned along it too: see yardFade), and signposts
+  {
+    const N = Math.ceil(Math.hypot(GX - PA0, GZ - PA1)), pos = [], uv = [], idx = [], dx = (GX - PA0) / N, dz = (GZ - PA1) / N, L = Math.hypot(dx, dz), sx = -dz / L, sz = dx / L;
+    for (let i = 0; i <= N; i++) for (const s of [-1, 1]) { const x = PA0 + dx * i + sx * s * 1.25, z = PA1 + dz * i + sz * s * 1.25; pos.push(x, gy(x, z) + 0.05, z); uv.push(s * 0.6, i * L / 2); }
+    for (let i = 0; i < N; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+    g.computeVertexNormals(); if (g.attributes.normal.getY(0) < 0) { g.setIndex(idx.map((v, i) => idx[i - (i % 3) + [0, 2, 1][i % 3]])); g.computeVertexNormals(); }
+    push(mats.dirt, g, true);
+    box(mats.woodDark, 0.12, 2.3, 0.12, 12.4, 1.15, 3.6, 0, 1);
+    board('Le pré →', 1.4, 0.35, 12.33, 1.95, 3.6, -Math.PI / 2, false); board('← Le pré', 1.4, 0.35, 12.47, 1.95, 3.6, Math.PI / 2, false);
+  }
+
+  // ---- loose hay in the yard: by the écurie and in front of the hangar
+  addHay(1.6, 0.7); addHay(-21.6, 0.9);
+
+  // named places for the feature modules
+  const W = (x, z, o = {}) => ({ x: X0 + x, z: Z0 + z, ...o });
   Object.assign(PLACES, {
     y: Y0,
     yard: toWorldBox(rx0, rx1, rz0, rz1),
-    barn: toWorldBox(BX0, BX1, -BZ, BZ),
-    aisle: toWorldBox(BX0, BX1, -AZ, AZ),
-    tackRoom: { ...toWorldBox(BX0, ROOM_X, AZ, BZ), door: { x: X0 - 11.7, z: Z0 + AZ } },
-    office: { ...toWorldBox(BX0, ROOM_X, -BZ, -AZ), door: { x: X0 - 11.7, z: Z0 - AZ } },
-    arena: { ...toWorldBox(AX0, AX1, AZ0, AZ1), door: { x: X0, z: Z0 + AZ1 }, letters: PLACES.arenaLetters },
-    trough: { x: X0 + 18, z: Z0 + 7.5 },
-    clubhouse: null, stabulation: null, pasture: null, feedRoom: null, groomingBay: null,
+    barn: toWorldBox(EX0, EX1, EZ0, EZ1),
+    aisle: toWorldBox(EX0, EX1, EZC - AZ, EZC + AZ),
+    tackRoom: { ...toWorldBox(EX0, ROOM_X, EZC + AZ, EZ1), door: W(-11.65, EZC + AZ) },
+    office: { ...toWorldBox(EX0, ROOM_X, EZ0, EZC - AZ), door: W(-11.65, EZC - AZ) },
+    arena: { ...toWorldBox(AX0, AX1, AZ0, AZ1), door: W((D0 + D1) / 2, AZ1), letters: PLACES.arenaLetters },
+    trough: W(EX1 + 0.45, 3.7),
+    clubhouse: { ...toWorldBox(CL_X, FX1, FZ0, FZ1), door: W(-13.8, FZ1), seat: W(SEAT.x, SEAT.z, { yaw: SEAT.yaw }) },
+    stabulation: { ...toWorldBox(SX0, SX1, SZ0, PDZ), shed: toWorldBox(SX0, SX1, SZ0, SZ1), gate: W(SX0, (GZ0 + GZ1) / 2), hay: rackHay,
+      spots: STAB_SPOTS.map(([x, z, yaw]) => W(x, z, { yaw })) },
+    pasture: { x: MEADOW.x, z: MEADOW.z, r: PR, gate: W(gate.x, gate.z, { yaw: gate.yaw }), shelter: W(SH0.x, SH0.z), trough: W(PT.x, PT.z) },
+    feedRoom: W(-18.35, 12.5),
+    groomingBay: W(GROOM[1].x, GROOM[1].z, { yaw: 0, spots: GROOM.map(s => W(s.x, s.z, { yaw: s.yaw, wash: !!s.wash })) }),
+    roundPen: W(RP.x, RP.z, { r: RP.r, gate: W(RP.x, RP.z + RP.r) }),
+    entrance: W(rx1, -7),
   });
 
-  // merge static pieces and add the stable bars
-  for (const [mat, geos] of buckets) { const m = new THREE.Mesh(mergeGeometries(geos), mat); m.castShadow = true; m.receiveShadow = true; root.add(m); }
+  // merge static pieces (every geometry made non-indexed with the same attributes) and add the stable bars
+  for (const [map, cast] of [[buckets, true], [flats, false]]) for (const [mat, geos] of map) {
+    const keep = mat === mats.paint ? ['position', 'normal', 'uv', 'color'] : ['position', 'normal', 'uv'];
+    const gs = geos.map(g => { const n = g.index ? g.toNonIndexed() : g; for (const k of Object.keys(n.attributes)) if (!keep.includes(k)) n.deleteAttribute(k); return n; });
+    const m = new THREE.Mesh(mergeGeometries(gs), mat); m.castShadow = cast; m.receiveShadow = true; root.add(m);
+  }
   const bars = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.012, 0.012, 1.0, 5), mats.bars, barPos.length);
   const m4 = new THREE.Matrix4();
   barPos.forEach(([x, z], i) => { m4.makeTranslation(x, 1.8, z); bars.setMatrixAt(i, m4); });
