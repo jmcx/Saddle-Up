@@ -4,6 +4,8 @@ A 3D horse-riding and show-jumping game in a single HTML file, built with [three
 
 Ride one of five mounts around a ten-fence show-jumping arena or a smaller pony arena, then head out over rolling hills to a cross-country course with a bank and a water jump. Time your jumps to go clear: run into a fence, rock or tree and your horse stops dead.
 
+Back at the yard, a French *ferme équestre*, you look after your horse, ride school figures in the manège, turn horses out to the pré, and revise for the **Galop 1** (the first French riding exam). The yard, the care activities and the Galop 1 trainer are in French.
+
 ## Play
 
 **Play online: https://jmcx.github.io/Saddle-Up/**
@@ -28,6 +30,7 @@ Then go to http://localhost:8765.
 | Space | Jump |
 | E | Get off and lead your horse on foot, get back on, or take the lead of the horse you're standing by (works on the move: the horse pulls up) |
 | Q | Let go of the lead and leave the horse where it stands |
+| F | Do what the prompt at the bottom of the screen says (look after a horse, tighten the girth, choose a figure, sit down and revise…). You can also tap the prompt |
 | P | Switch rider: Mélienette or Nanou |
 | 1–5 | Fetch one of the five horses straight away (the one you had goes back to its box) |
 | T | Time of day: dawn, day, golden hour, dusk |
@@ -79,18 +82,57 @@ West of the stable is a fenced sand area with two trail obstacles. Press C until
 
 Horses now turn a little tighter at a walk and trot (it makes the slalom possible at a trot), and the same as before at the gallop.
 
-## Stable yard
+## The yard: la ferme équestre
 
-West of the arenas is a stable yard. Press C until it says "Stable yard" to start there, facing the barn.
+West of the arenas is a farm riding school, inspired by the Ferme équestre du Loret near Nantes. Press C until it says "Stable yard" to start there. Signs are in French.
 
-- **The barn** has twelve boxes with straw bedding, name plates and water buckets, a tack room (saddles on wall racks, bridles on hooks, a tack trunk and rugs) and a little office (desk and computer, filing cabinet, notice board). The five horses you can ride live in open boxes with hay; go in on foot to take one out.
-- **The indoor arena** is a 20 × 40 m school with a sand floor, kickboards, dressage letters and two small jumps (I1 and I2).
-- **Roofs fade** while you're inside a building so you can see what you're doing, and the camera stays inside the walls.
-- **Walls are solid:** walking into one just stops you, but hitting one at a trot or faster counts as a crash.
+- **Le manège:** a covered 42 × 20 m school with a sand floor and big letters round the walls (A and C on the short sides, K-E-H and F-B-M on the long sides). No jumps: it's for figures (see below).
+- **L'écurie:** boxes for the five horses you can ride, with their names, hay and a water bucket. Go in on foot to take one out. The **sellerie** (tack room) and the **bureau** open off the aisle.
+- **Le club house:** in the stone farmhouse, with tables, posters and a hot-chocolate corner. Sit at the table to revise your Galop 1.
+- **La stabulation libre:** an open shed and paddock where six ponies live loose: Frisette, Cowboy, Happy, Armstrong, Caramel and Réglisse. Walk up and press F to stroke one; the game tells you its coat.
+- **Le pré:** a fenced field north of the yard, at the end of the track, with a shelter and a trough. The mare Hirondelle lives there with her foal, Filou.
+- Also a hay barn with the feed room, a grooming bay, a round pen, a trough, a muck heap and a few hens.
+- **Roofs fade** while you're inside a building, and the camera stays inside the walls.
+- **Walls and fences are solid:** walking into one just stops you, but hitting one at a trot or faster counts as a crash.
+
+### Looking after your horse
+
+On foot, stand by a horse and press F ("S'occuper de…") for its care menu.
+
+- **Tighten the girth (ressangler):** a horse fresh from its box has a loose girth, and you can't get on until you've tightened it. Resetting the course (R) or changing course (C) puts you straight in the saddle, so quick play is never blocked.
+- **Grooming (pansage):** pick the tool and brush the horse: étrille first on the fleshy parts (never the head or legs), then the bouchon, then the brosse douce for the head and legs, and the cure-pieds for the feet. A wrong choice is explained, never punished. Horses get muddy with riding and shine after a good groom.
+- **Feeding:** hay (fourrage) at the box, one ration of pellets (granulés) fetched from the feed room, and a treat or two (carrot or apple) on a flat hand. Too many pellets are refused.
+- **Water:** each box bucket empties over time; refill it. A horse you're leading can also drink at the yard trough.
+- **Tack:** saddle and bridle your horse step by step, or take the tack off (it then wears a halter). In the sellerie you choose the saddle, pad colour, leather and noseband, with the right size for a pony or a horse, and you clean the tack with water and glycerine soap.
+
+### Safety: never walk behind a horse
+
+On foot, if you go close behind a horse's hindquarters, it pins its ears back as a warning. Stay there and it kicks, and you wake up in hospital with a short lesson on how to go round a horse safely. It applies to every horse and pony, including the mare and foal.
+
+### Figures in the manège
+
+Ride (or lead) into the manège and a figure is traced on the sand. Follow the trace from its start gate and the game says the figure's name out loud in French and gives you one to three stars for precision.
+
+- Press F ("Choisir une figure") to pick one, on either rein: volte, demi-volte, demi-volte renversée, diagonale, serpentine, cercle, doubler dans la largeur, doubler dans la longueur.
+- "Suite libre" proposes them one after another. "Effacer" clears the trace: the game then recognises a volte, cercle, demi-volte, diagonale or serpentine that you ride on your own.
+
+### Turning out to the pré
+
+Lead a horse along the track into the pré and let go (Q), or press F at the gate. It grazes and wanders inside the fence until you come back and take its lead (E). Tack comes off before a horse is turned out. Press F by the fence ("Regarder le poulain") to watch the foal.
 
 ### Hay
 
 There's hay in the open boxes, in loose piles around the yard and in a round bale feeder. Walk your horse up to any of it and the horse stops, puts its head down and starts munching, turning its head towards the hay. The pile slowly goes down while it eats, and gets refilled a while after it's finished. Change gait to ride on. This works on foot too, so you can lead your horse to the hay.
+
+## Galop 1
+
+The "Galop 1" button (top right), or the table in the club house, opens the trainer. Each rider has her own progress.
+
+- **S'entraîner:** questions by chapter with the answer explained each time; ones you got wrong come back more often. The 139 questions follow the official FFE Galop 1 programme: general knowledge, knowing the horse, looking after it, working on foot, riding.
+- **Les images:** name the parts of the body, legs, head and hoof, the coats (bai, alezan, noir, gris, pie, isabelle, palomino) and the white markings on the head and legs. Look first, then take the quiz.
+- **Test blanc:** a 20-question mock exam, marked out of 20, with a review of your mistakes.
+- **Je sais, je peux:** the self-assessment sheet.
+- **Le parcours:** the steps of the practical test.
 
 ## On foot
 
@@ -123,7 +165,7 @@ Ride east out of the arena to find nine cross-country obstacles (XC1–XC9) mark
 
 - **Rider:** sits a rising trot, folds forward over jumps, stays balanced when the horse pitches, and holds the reins to a bit and bridle.
 - **Hoofprints:** they stay in the sand track and fade after about 45 seconds.
-- **Wildlife:** birds peck in the grass and scatter when you gallop past, and three loose horses graze in a meadow to the west. They sometimes call back when your horse whinnies.
+- **Wildlife:** birds peck in the grass and scatter when you gallop past, and three loose horses graze in the pré. They sometimes call back when your horse whinnies.
 - **Sound:** hoof beats, snorts after a fast ride, breathing at the gallop, a whinny (or a bray) when you crash, wind at speed, birdsong, splashing and rain.
 
 ## How it works
@@ -131,4 +173,5 @@ Ride east out of the arena to find nine cross-country obstacles (XC1–XC9) mark
 - The horses and rider are built in code from smooth lofted shapes. Nothing is loaded from a model file.
 - Each horse leg uses two-bone inverse kinematics, so hooves plant on the ground, even on slopes. Walk, trot and gallop each have a real footfall pattern and blend smoothly into one another. The rider's arms and legs use 3D two-bone IK.
 - The terrain is one height function, shared by the ground mesh, the physics and (in GLSL) the grass shader.
+- The core game is the script in `index.html`. Everything added on top (care, safety, figures, Galop 1, the ponies and the pré) is a small module in `js/features/`; see `js/features/README.md`.
 - Every sound is synthesised with the Web Audio API.
