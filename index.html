@@ -2580,6 +2580,7 @@ const tmp = new V3(), hw = new V3();
 const newRigState = (x = 0, z = 0, yaw = 0) => ({
   x, z, yaw, speed: 0, phase: 0, turn: 0, lean: 0, graze: 0, breath: 0, swish: 0, swishT: 3,
   jump: null, rear: null, stun: 0, rvx: 0, rvz: 0, idle: 0, rootY: groundH(x, z), prevX: x, prevZ: z, slope: 0, fast: 0,
+  kick: null, alert: 0, alertGoal: 0, alertSide: 1,   // kick: { t, side } lashing out behind; alert: ears pinned, a hind hoof cocked (set by js/features/safety.js)
 });
 
 // One step of a horse: locomotion, jumping, terrain, gait animation and leg IK.
@@ -2590,7 +2591,7 @@ function updateRig(R, s, ctl, dt, time) {
   // --- locomotion
   s.stun = Math.max(0, s.stun - dt);
   const wet = inWater(s.x, s.z);
-  let target = s.stun > 0 || s.rear ? 0 : ctl.target;
+  let target = s.stun > 0 || s.rear || s.kick ? 0 : ctl.target;
   // rearing: rise onto the hind legs, stay up while Space is held, then come back down
   let rw = 0;
   const RR = s.rear;
@@ -2606,6 +2607,17 @@ function updateRig(R, s, ctl, dt, time) {
       }
     }
   }
+  // kicking out behind: gather, lash both hind legs back and up with the hindquarters lifting, then settle
+  let kx = 0, kg = 0;
+  const KK = s.kick;
+  if (KK) {
+    KK.t += dt;
+    const t = KK.t;
+    kg = smooth(clamp(t / 0.12, 0, 1)) * (1 - smooth(clamp((t - 0.12) / 0.1, 0, 1)));
+    kx = smooth(clamp((t - 0.12) / 0.12, 0, 1)) * (1 - smooth(clamp((t - 0.36) / 0.4, 0, 1)));
+    if (t >= 0.76) s.kick = null;
+  }
+  s.alert = damp(s.alert || 0, s.alertGoal || 0, 5, dt);
   if (wet) target *= 0.55;                                   // wading is slow
   s.speed = s.speed < target ? Math.min(target, s.speed + 2.6 * dt) : Math.max(target, s.speed - 4.0 * dt);
   const aSpd = Math.abs(s.speed);
@@ -2716,6 +2728,14 @@ function updateRig(R, s, ctl, dt, time) {
         L.y = lerp(L.y, (0.8 + 0.1 * paw) * k, rw); L.z = lerp(L.z, (-0.3 + 0.06 * paw) * k, rw); L.flex = lerp(L.flex, 2.0 + 0.4 * paw, rw);
       } else { L.z = lerp(L.z, 0.14 * k, rw); L.y *= 1 - rw; }
     }
+    if (!L.front) {
+      if (s.alert > 0.01 && L.x * s.alertSide > 0) { L.y += 0.06 * k * s.alert; L.z -= 0.04 * k * s.alert; L.flex += 0.7 * s.alert; }   // resting a hind hoof, ready to kick
+      if (KK) {
+        const hi = KK.side && L.x * KK.side > 0 ? 1.12 : 1;
+        L.z += 0.08 * k * kg; L.flex += 0.6 * kg;
+        L.y = lerp(L.y, 0.5 * k * hi, kx); L.z = lerp(L.z, -0.95 * k * hi, kx); L.flex = lerp(L.flex, 0.15, kx);
+      }
+    }
     // follow the ground under each hoof
     if (!airborne) {
       const lx = L.x * S, lz = (L.nz + L.z) * S;
@@ -2743,6 +2763,13 @@ function updateRig(R, s, ctl, dt, time) {
     // rear up, pivoting over the hind legs (body-local point above the hocks)
     const rp = -0.88 * rw + 0.04 * Math.sin(time * 5) * rw, py = 0.62, pz = -0.55;
     body.position.y += py - (py * Math.cos(rp) - pz * Math.sin(rp)) - 0.06 * rw * k;
+    body.position.z += pz - (py * Math.sin(rp) + pz * Math.cos(rp));
+    body.rotation.x += rp;
+  }
+  if (kx > 0 || kg > 0) {
+    // hindquarters up, pivoting over the front legs
+    const rp = 0.3 * kx - 0.04 * kg, py = 0.62, pz = 0.55;
+    body.position.y += py - (py * Math.cos(rp) - pz * Math.sin(rp)) - 0.03 * kg * k;
     body.position.z += pz - (py * Math.sin(rp) + pz * Math.cos(rp));
     body.rotation.x += rp;
   }
@@ -2791,7 +2818,7 @@ function updateRig(R, s, ctl, dt, time) {
   const tug = hay ? Math.pow(Math.max(0, Math.sin(time * 0.8 + seed)), 4) * gz : 0;
   R.jaw.rotation.x = ch * 0.36 * (0.5 + 0.5 * Math.sin(s.chew));
   R.jaw.rotation.y = ch * 0.05 * Math.sin(s.chew + 1.2);
-  neck.rotation.x = 0.1 + wg * 0.14 + wt * 0.06 + nod * gw + gz * (B.graze ?? 1.05) + grazeMove + jNeck - s.slope * 0.5 + 0.3 * rw - 0.2 * tug;
+  neck.rotation.x = 0.1 + wg * 0.14 + wt * 0.06 + nod * gw + gz * (B.graze ?? 1.05) + grazeMove + jNeck - s.slope * 0.5 + 0.3 * rw - 0.2 * tug + 0.35 * kx;
   neck.rotation.y = s.turn * 0.22 + (hay ? hayTurn : gz * 0.12 * Math.sin(time * 0.23));
   head.rotation.x = 0.82 - wg * 0.18 + gz * 0.25 + 0.03 * Math.sin(time * 0.9) * (1 - clamp(aSpd, 0, 1)) + rw * (0.1 + 0.12 * Math.sin(time * 3.1))
     + ch * 0.1 * Math.sin(s.chew - 0.6) - 0.12 * tug;
@@ -2803,7 +2830,8 @@ function updateRig(R, s, ctl, dt, time) {
     const u = e.userData;
     u.t -= dt;
     if (u.t < 0) { u.t = 1.5 + Math.random() * 4; u.target = (Math.random() - 0.3) * 0.7; }
-    const goal = aSpd > 0.5 ? -0.2 + (-s.turn * u.sx) * 0.2 : u.target;
+    const pin = Math.max(s.alert, KK ? 1 : 0);                 // ears pinned flat back when upset
+    const goal = lerp(aSpd > 0.5 ? -0.2 + (-s.turn * u.sx) * 0.2 : u.target, 1.5, pin);
     u.cur = damp(u.cur, goal, 5, dt);
     e.rotation.x = u.base + u.cur * 0.5;
     e.rotation.y = u.sx * (u.cur * 0.6 + 0.15);
@@ -2816,7 +2844,7 @@ function updateRig(R, s, ctl, dt, time) {
   s.swish = damp(s.swish, 0, 0.9, dt);
   const run = clamp((aSpd / SM - 2) / 7, 0, 1);
   tailSegs.forEach((g, i) => {
-    g.rotation.x = lerp(TAIL_REST[i], TAIL_RUN[i], run) + (i === 0 ? jTail + 0.7 * rw : jTail * 0.3) + run * 0.06 * Math.sin(time * 13 - i * 0.8) + (wt + wg) * 0.04 * Math.sin(TAU * 2 * ph - i * 0.5);
+    g.rotation.x = lerp(TAIL_REST[i], TAIL_RUN[i], run) + (i === 0 ? jTail + 0.7 * rw + 0.5 * kx : jTail * 0.3) + run * 0.06 * Math.sin(time * 13 - i * 0.8) + (wt + wg) * 0.04 * Math.sin(TAU * 2 * ph - i * 0.5);
     g.rotation.z = (s.swish * 1.0 + 0.03) * Math.sin(time * 3.2 - i * 0.55) * (0.3 + i * 0.12) - s.turn * 0.05 * (i > 0 ? 1 : 0);
   });
 
