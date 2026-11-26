@@ -25,6 +25,7 @@ const CSS = `
   background: rgba(20,22,18,0.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 #su-hint.show { display: flex; }
 #su-hint kbd { background: #f1e3c8; color: #2a1d12; font-weight: 700; }
+@media (max-width: 1600px) { #su-hint { bottom: 212px; } }   /* above the stride meter and the help box */
 body.touch #su-hint { bottom: 190px; }
 #su-menuBtn { font: inherit; font-size: 12.5px; font-weight: 600; color: #2a1d12; cursor: pointer; padding: 8px 12px; border-radius: 10px; border: 1px solid #f1e3c8; background: #f1e3c8; }
 #su-menuBtn:hover { background: #fff1d6; }

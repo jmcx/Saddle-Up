@@ -38,7 +38,7 @@ export function init(SU) {
   const watch = (o) => { const w = { R: o.R, s: o.s, B: o.B, name: o.name ?? '', cool: 0, inT: 0, warnT: 0, alerted: false }; watched.push(w); return w; };
   const find = (o) => watched.find(w => w === o || w.s === o.s || (o.R && w.R === o.R));
   const unwatch = (o) => { const w = find(o); if (!w) return; calm(w); watched.splice(watched.indexOf(w), 1); };
-  for (const h of SU.horses) watch(h);
+  for (const h of SU.horses) watch(h).home = h.box;
 
   // where the person stands relative to a horse: b = metres behind its hindquarters, lat = metres to its side (+ = its left/x side)
   const rel = { b: 0, lat: 0 };
@@ -64,7 +64,13 @@ export function init(SU) {
       if (!free) { if (w.alerted || w.inT) calm(w); continue; }
       const dx = P.x - w.s.x, dz = P.z - w.s.z;
       if (dx * dx + dz * dz > NEAR * NEAR) { if (w.alerted || w.inT) calm(w); continue; }
-      const zn = canKick(w) ? zone(w, P.x, P.z) : 0;
+      let zn = canKick(w) ? zone(w, P.x, P.z) : 0;
+      // a horse standing in its own box has its croup to the door: coming in at a walk, you have spoken to it first (the
+      // lesson the doctor gives), so it stays calm and you get the tip instead of a kick. Running in still surprises it.
+      if (zn && w.home && Math.abs(P.speed) <= 2.2 && Math.hypot(w.s.x - w.home.x, w.s.z - w.home.z) < 1.2 && Math.hypot(P.x - w.home.x, P.z - w.home.z) < 3.8) {
+        if (zn === 2 && clock - (w.tipT ?? -99) > 40) { w.tipT = clock; SU.toast(`Tu préviens ${w.name} de la voix, puis tu passes le long de son épaule.`, 'info'); }
+        zn = 0;
+      }
       if (zn === 0) { calm(w); continue; }
       // the warning: ears back, tail swishing, the hind hoof on your side cocked
       if (!w.alerted) {
@@ -233,6 +239,7 @@ export function init(SU) {
       if (!ok && SU.world.places.yard) { const Y = SU.world.places.yard; P.x = (Y.minX + Y.maxX) / 2; P.z = (Y.minZ + Y.maxZ) / 2; SU.actions.collidePerson(P); }
       P.yaw = Math.atan2(s.x + fx * S - P.x, s.z + fz * S - P.z); P.speed = 0;
       SU.actions.placeFree(P);
+      P.near = SU.actions.nearbyHorse(P); SU.actions.onModeChanged();   // so the core's "Press E…" doesn't cover the message below
     }
     q.w.cool = 3;
     overlay.className = ''; setTimeout(() => { if (!seq) overlay.remove(); }, 400);
