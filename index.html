@@ -2458,7 +2458,7 @@ function leadSpot(R, size, out) {
 const _spot = new V3(), _seat = new V3();
 // the person while attached to a horse (riding, leading, or getting on/off), plus the horse's reins and stirrups
 function updateTack(R, s, g, dt, time) {
-  const t = R.tack, P = player;
+  const t = R.tack, P = R.rider || player;                  // R.rider: another player's person on their horse (js/features/multi.js)
   const mine = P && P.horse === R;
   if (mine) {
     if (P.mode === 'ride') poseRiding(P, R, s, g, dt);
@@ -4135,7 +4135,7 @@ Object.assign(SU, {
   gfx: Object.assign(gfx, { grass, sun, GRASS_N, herd }),     // for js/features/perf.js (quality governor, rig batching)
   util: { clamp, lerp, damp, smooth, TAU },
   world: { groundH, colliders, walls, fences, haySpots, roofs, interiors, stallBoxes, places: PLACES, STABLE, TRAIL, COURSE, PONY_ARENA, MEADOW },
-  horses, BREEDS, PERSONS, buildHorse, buildPerson, newRigState, updateRig, horseOf,
+  horses, BREEDS, PERSONS, buildHorse, buildPerson, newRigState, updateRig, horseOf, poseStanding,
   // where you are standing (on foot) or sitting (riding), in world coordinates
   personPos(out = {}) { const P = player; if (P.mode === 'free' || P.mode === 'toTake') { out.x = P.x; out.z = P.z; } else { P.group.getWorldPosition(_pp); out.x = _pp.x; out.z = _pp.z; } return out; },
   camFocus: () => ({ ...camFocus() }),
@@ -4150,7 +4150,7 @@ Object.defineProperties(SU, {
   course: { get: () => COURSES[courseIdx].key },
 });
 // each feature is a module exporting init(SU); a feature that fails to load never takes the game down with it
-const FEATURES = ['ui', 'galop', 'care', 'safety', 'figures', 'pasture', 'perf'];
+const FEATURES = ['ui', 'galop', 'care', 'safety', 'figures', 'pasture', 'perf', 'multi'];
 SU.ready = (async () => {
   for (const name of FEATURES) {
     try { const m = await import(`./js/features/${name}.js`); if (m.init) await m.init(SU); SU.features[name] ??= true; }
