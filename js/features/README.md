@@ -18,7 +18,7 @@ No build step, no dependencies: plain ES modules, three.js via `SU.THREE` (never
 | `SU.H`, `SU.st`, `SU.horse` | rig / state / entry of the horse you ride, lead or last held |
 | `SU.player` | `{ mode: 'ride'|'lead'|'free'|'toLead'|'toRide'|'toTake', horse, x, z, yaw, size, group }` |
 | `SU.personPos(out)` | where you are, on foot or mounted |
-| `SU.buildHorse(B, opts)`, `SU.newRigState(x,z,yaw)`, `SU.updateRig(R, s, ctl, dt, time)` | make and animate more horses. `ctl = { target (m/s), turnIn (-1..1), player: false, vol }` |
+| `SU.buildHorse(B, opts)`, `SU.newRigState(x,z,yaw)`, `SU.updateRig(R, s, ctl, dt, time)`, `SU.poseStanding(P, speed, dt, hold)` | make and animate more horses and people. `ctl = { target (m/s), turnIn (-1..1), player: false, vol }` |
 | `SU.actions` | `actionE, letGo, takeLead(h), switchToHorse(i), setGait, setCourse, resetCourse, brakeHorse, sendHome(h), setPerson, placeFree, nearbyHorse, collidePerson, seatPerson, standAtLead, onModeChanged` |
 | `SU.audio` | Web Audio helpers: `ctx, out, audioOk(), env, noiseHit, hoofSound, neigh, bray, snort, munch, muted` |
 | `SU.toast(msg, 'info'|'good'|'bad'|'warn')` | the banner at the top (1.8 s, one line) |
@@ -56,6 +56,7 @@ query says they are fully behind walls (never when the camera is inside the rig'
 | `safety` | `watch({ R, s, B, name })` (another feature's horse can kick too; returns the entry), `unwatch(obj)`, `kickNow(obj)`, `zone(entry, x, z)` (0 safe, 1 warning, 2 kick), `busy` (a kick or the hospital is under way), `watched` |
 | `figures` | `select(id, rein)`, `clear()`, `suite()`, `openMenu()`, `figures` (ids), `state` (`{ id, rein, phase, prog, total, stars, mean, trace, near }`). Event: `SU.emit('figure', id, stars)` |
 | `pasture` | `ponies` (`{ list, rg, slots, trough }`, the stabulation ponies), `pre` (`{ mare, foal, light, all, out, rg, turnOut(h), caught(h, quiet), isOut(h), watchFoal(), scene }`). Events: `SU.emit('pasture', 'out' \| 'in', h)` |
+| `multi` | riding together over WebRTC (PeerJS, loaded on demand): `host()` (resolves to the four-letter code), `join(code)`, `leave()`, `open()` (the panel), `status` (`off`, `opening`, `waiting`, `joining`, `on`), `code`, `role`, `ghosts` (id -> the friend's rig, state, person). A friend is a cached, batched horse rig driven by `updateRig` at the positions they send 15 times a second, shown 130 ms in the past so it moves evenly; `R.rider` puts their person on it. `?netlog` in the URL keeps PeerJS's log in `_test.log` |
 
 ## Rules
 

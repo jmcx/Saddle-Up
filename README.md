@@ -134,6 +134,22 @@ The "Galop 1" button (top right), or the table in the club house, opens the trai
 - **Je sais, je peux:** the self-assessment sheet.
 - **Le parcours:** the steps of the practical test.
 
+## Riding together
+
+Two to four players can share the same yard, each on their own computer.
+
+- One player clicks **À deux** (top right), then **Créer une partie**, and gets a four-letter code.
+- The others click **À deux**, **Rejoindre une partie**, and type the code.
+
+You see each other's horse and rider: gaits, jumps, getting on and off, leading and walking on foot, with a name above each friend.
+Everything else stays personal: each player keeps their own stable horses, ponies, care, courses and Galop 1 progress, and
+players pass through each other.
+
+There is no game server. The browsers talk to each other directly (WebRTC); a free public broker ([PeerJS](https://peerjs.com))
+is used for a second to introduce them, so both computers need Internet access at that moment. On the same Wi-Fi the game data
+never leaves the house. It also works between two homes when the routers allow it. Guest Wi-Fi networks that isolate devices
+from each other will block it.
+
 ## On foot
 
 - **Get off (E)** at any pace and the horse pulls up while your rider hops down and leads the horse by the reins from its left shoulder. You can walk or jog alongside, but not jump. The stirrups are run up while nobody's riding.
