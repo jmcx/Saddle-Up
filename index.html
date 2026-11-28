@@ -4135,7 +4135,7 @@ Object.assign(SU, {
   gfx: Object.assign(gfx, { grass, sun, GRASS_N, herd }),     // for js/features/perf.js (quality governor, rig batching)
   util: { clamp, lerp, damp, smooth, TAU },
   world: { groundH, colliders, walls, fences, haySpots, roofs, interiors, stallBoxes, places: PLACES, STABLE, TRAIL, COURSE, PONY_ARENA, MEADOW },
-  horses, BREEDS, PERSONS, buildHorse, buildPerson, newRigState, updateRig, horseOf, poseStanding,
+  horses, BREEDS, PERSONS, buildHorse, buildPerson, newRigState, updateRig, horseOf, poseStanding, score,
   // where you are standing (on foot) or sitting (riding), in world coordinates
   personPos(out = {}) { const P = player; if (P.mode === 'free' || P.mode === 'toTake') { out.x = P.x; out.z = P.z; } else { P.group.getWorldPosition(_pp); out.x = _pp.x; out.z = _pp.z; } return out; },
   camFocus: () => ({ ...camFocus() }),
@@ -4150,7 +4150,7 @@ Object.defineProperties(SU, {
   course: { get: () => COURSES[courseIdx].key },
 });
 // each feature is a module exporting init(SU); a feature that fails to load never takes the game down with it
-const FEATURES = ['ui', 'galop', 'care', 'safety', 'figures', 'pasture', 'perf', 'multi'];
+const FEATURES = ['ui', 'galop', 'care', 'safety', 'figures', 'pasture', 'perf', 'multi', 'chrono'];
 SU.ready = (async () => {
   for (const name of FEATURES) {
     try { const m = await import(`./js/features/${name}.js`); if (m.init) await m.init(SU); SU.features[name] ??= true; }

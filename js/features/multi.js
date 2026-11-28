@@ -164,6 +164,14 @@ export function init(SU) {
   const guests = new Map();           // host only: peer id -> its open channels
   function sendTo(id, msg) { for (const c of guests.get(id) ?? []) if (c.open) { c.send(msg); return; } }
   const listeners = new Set();        // the open panel redraws when something changes
+  // game messages: small objects another feature sends to everyone in the game (js/features/chrono.js). The host passes them on.
+  const gameL = new Set();
+  const myId = () => role === 'host' ? 'host' : role === 'guest' && hostConn ? peer?.id ?? 'me' : 'me';
+  const gotGame = (id, m) => { for (const f of gameL) { try { f(id, m); } catch (e) { console.error('[SU] multi', e); } } };
+  function sendGame(m) {
+    if (role === 'host') { for (const id of guests.keys()) sendTo(id, { ...m, t: 'g', id: 'host' }); }
+    else if (hostConn?.open) hostConn.send({ ...m, t: 'g' });
+  }
   function loadLib() {
     if (Peer) return Promise.resolve();
     return new Promise((ok, fail) => {
@@ -234,7 +242,9 @@ export function init(SU) {
             guests.get(c.peer).add(c); setStatus('on');
           });
           c.on('data', (m) => {
-            if (!guests.get(c.peer)?.has(c) || !m || m.t !== 's') return;
+            if (!guests.get(c.peer)?.has(c) || !m) return;
+            if (m.t === 'g') { for (const id of guests.keys()) if (id !== c.peer) sendTo(id, { ...m, id: c.peer }); gotGame(c.peer, m); return; }
+            if (m.t !== 's') return;
             receive(c.peer, m.d);
             for (const id of guests.keys()) if (id !== c.peer) sendTo(id, { t: 's', id: c.peer, d: m.d });   // pass it on to the other guests
           });
@@ -280,6 +290,7 @@ export function init(SU) {
         c.on('data', (m) => {
           if (!m || hostConn !== c) return;
           if (m.t === 's' && typeof m.id === 'string') receive(m.id, m.d);
+          else if (m.t === 'g' && typeof m.id === 'string') gotGame(m.id, m);
           else if (m.t === 'bye') removeGhost(m.id);
           else if (m.t === 'full') leave(ERR.full);
         });
@@ -334,7 +345,9 @@ export function init(SU) {
       } else {
         if (role === 'host') B.append(el('div', 'su-note', 'Donne ce code à ton ami·e :'), el('div', 'su-code', code));
         B.append(el('div', 'su-note', who.length ? `Avec toi : <b>${who.join(', ')}</b>` : role === 'host' ? 'J’attends ton ami·e…<br>Tu peux fermer cette fenêtre et jouer en attendant.' : 'Tu es dans la partie.'));
+        if (SU.features.chrono?.open) B.append(btnEl('⏱ Parcours chrono', true, () => { P.close(); SU.features.chrono.open(); }));
         B.append(btnEl('Quitter la partie', false, () => { leave(); view = 'auto'; }));
+        B.lastChild.style.marginTop = '8px';
       }
     }
     listeners.add(draw); draw();
@@ -342,5 +355,6 @@ export function init(SU) {
   const btn = SU.ui.topButton('À deux', 'Jouer à deux sur le même réseau', openPanel);
 
   SU.features.multi = { host, join, leave, open: openPanel, get status() { return status; }, get code() { return code; }, get role() { return role; }, ghosts,
+    send: sendGame, onGame: (f) => { gameL.add(f); }, get myId() { return myId(); }, ids: () => role === 'host' ? ['host', ...guests.keys()] : [myId()],
     _test: { snapshot, receive, tick, log: dbg } };
 }
