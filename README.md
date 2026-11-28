@@ -150,6 +150,17 @@ is used for a second to introduce them, so both computers need Internet access a
 never leaves the house. It also works between two homes when the routers allow it. Guest Wi-Fi networks that isolate devices
 from each other will block it.
 
+### Parcours chrono
+
+The **⏱ Chrono** button starts a timed round over the fences of the big arena (10 fences) or the pony arena (8 low ones).
+Jump every fence in order, as fast as you can: each fault (a rail down, a refusal, a crash) adds 4 seconds.
+Your best time on each arena is kept.
+
+In a shared game, the round is an invitation: your friends get 15 seconds to answer *Je participe* or *Non merci*, then
+everyone who said yes lines up side by side before fence 1 and leaves on the same "Partez !". A small board shows how far
+each rider is, then the times, and names the winner. Each computer times its own rider, and fences are not shared:
+a rail your friend knocks down still stands on your screen.
+
 ## On foot
 
 - **Get off (E)** at any pace and the horse pulls up while your rider hops down and leads the horse by the reins from its left shoulder. You can walk or jog alongside, but not jump. The stirrups are run up while nobody's riding.
